@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ESP32 BMI160 Web Viewer</title>
+  <title>ESP32 BMI160 Viewer</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     body { margin:0; font-family: Arial, sans-serif; background:#111; color:#eee; }
-    .wrap { display:grid; grid-template-columns: 380px 1fr; min-height:100vh; }
+    .wrap { display:grid; grid-template-columns: 420px 1fr; min-height:100vh; }
     .panel { padding:16px; background:#1a1a1a; overflow:auto; }
     .viewer { position:relative; }
     .row { margin-bottom:12px; }
@@ -17,8 +17,10 @@
     .status { padding:8px; background:#222; border-radius:8px; margin-bottom:12px; }
     .small { font-size:12px; opacity:.8; }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
     .value { font-weight:bold; }
     canvas { display:block; width:100%; height:100%; }
+    hr { border:0; border-top:1px solid #333; margin:16px 0; }
   </style>
 </head>
 <body>
@@ -29,7 +31,6 @@
     <div class="row">
       <label>WSS broker URL</label>
       <input id="brokerUrl" value="wss://09cf903bcc164264a7e7668d4cc7478f.s1.eu.hivemq.cloud:8884/mqtt" />
-      <div class="small">Eksempel: wss://din-host:8884/mqtt</div>
     </div>
 
     <div class="row">
@@ -39,7 +40,7 @@
 
     <div class="row">
       <label>MQTT password</label>
-      <input id="password" type="password" value="Gyro_cloudog0086" />
+      <input id="password" type="password" value="" />
     </div>
 
     <div class="row">
@@ -59,11 +60,30 @@
       <div>Base topic: <span class="value" id="activeTopic">-</span></div>
     </div>
 
+    <hr>
+
+    <h3>Orientering</h3>
     <div class="grid2">
       <div>Roll: <span class="value" id="rollVal">-</span></div>
       <div>Pitch: <span class="value" id="pitchVal">-</span></div>
       <div>Yaw: <span class="value" id="yawVal">-</span></div>
       <div>Home: <span class="value" id="homeVal">-</span></div>
+    </div>
+
+    <hr>
+
+    <h3>Acceleration (g)</h3>
+    <div class="grid3">
+      <div>AX: <span class="value" id="axVal">-</span></div>
+      <div>AY: <span class="value" id="ayVal">-</span></div>
+      <div>AZ: <span class="value" id="azVal">-</span></div>
+    </div>
+
+    <h3>Gyro (dps)</h3>
+    <div class="grid3">
+      <div>GX: <span class="value" id="gxVal">-</span></div>
+      <div>GY: <span class="value" id="gyVal">-</span></div>
+      <div>GZ: <span class="value" id="gzVal">-</span></div>
     </div>
 
     <hr>
@@ -129,6 +149,21 @@
       <input id="gyroAlpha" type="number" step="0.01" value="0.50">
       <button onclick="publishSet('gyro_lpf_alpha', document.getElementById('gyroAlpha').value)">Send</button>
     </div>
+
+    <hr>
+
+    <h3>Data-log</h3>
+    <div class="grid2">
+      <button onclick="startLogging()">Start log</button>
+      <button onclick="stopLogging()">Stop log</button>
+      <button onclick="clearLog()">Ryd log</button>
+      <button onclick="downloadCSV()">Download CSV</button>
+    </div>
+
+    <div class="row">
+      Logging: <span class="value" id="loggingState">OFF</span><br>
+      Samples: <span class="value" id="sampleCount">0</span>
+    </div>
   </div>
 
   <div class="viewer">
@@ -140,13 +175,15 @@
 let client = null;
 let activeDeviceId = "";
 let baseTopic = "";
+let samples = [];
+let loggingEnabled = false;
 
 // THREE
 const canvas = document.getElementById("c");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 
 function resizeRenderer() {
-  const panelWidth = 380;
+  const panelWidth = 420;
   const w = Math.max(window.innerWidth - panelWidth, 300);
   const h = window.innerHeight;
   renderer.setSize(w, h);
@@ -182,6 +219,7 @@ animate();
 resizeRenderer();
 window.addEventListener("resize", resizeRenderer);
 
+// UI helpers
 function setStatus(txt) {
   document.getElementById("statusBox").innerText = txt;
 }
@@ -193,6 +231,70 @@ function setActiveDevice(deviceId) {
   document.getElementById("activeTopic").innerText = baseTopic;
 }
 
+function updateSampleCount() {
+  document.getElementById("sampleCount").innerText = samples.length;
+}
+
+function updateLoggingState() {
+  document.getElementById("loggingState").innerText = loggingEnabled ? "ON" : "OFF";
+}
+
+function startLogging() {
+  loggingEnabled = true;
+  updateLoggingState();
+  setStatus("Logging: ON");
+}
+
+function stopLogging() {
+  loggingEnabled = false;
+  updateLoggingState();
+  setStatus("Logging: OFF");
+}
+
+function clearLog() {
+  samples = [];
+  updateSampleCount();
+  setStatus("Log ryddet");
+}
+
+function downloadCSV() {
+  if (!samples.length) {
+    alert("Ingen samples at gemme endnu.");
+    return;
+  }
+
+  const headers = [
+    "ts","roll","pitch","yaw",
+    "ax","ay","az",
+    "gx","gy","gz",
+    "qw","qx","qy","qz"
+  ];
+
+  const rows = samples.map(s => [
+    s.ts, s.roll, s.pitch, s.yaw,
+    s.ax, s.ay, s.az,
+    s.gx, s.gy, s.gz,
+    s.qw, s.qx, s.qy, s.qz
+  ]);
+
+  const csv = [
+    headers.join(","),
+    ...rows.map(r => r.join(","))
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "gyro_log.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// MQTT
 function connectMQTT() {
   const brokerUrl = document.getElementById("brokerUrl").value.trim();
   const username = document.getElementById("username").value.trim();
@@ -264,6 +366,34 @@ function connectMQTT() {
         document.getElementById("yawVal").innerText = Number(data.yaw ?? 0).toFixed(2);
         document.getElementById("homeVal").innerText = data.home_set ? "Ja" : "Nej";
 
+        document.getElementById("axVal").innerText = Number(data.ax ?? 0).toFixed(5);
+        document.getElementById("ayVal").innerText = Number(data.ay ?? 0).toFixed(5);
+        document.getElementById("azVal").innerText = Number(data.az ?? 0).toFixed(5);
+
+        document.getElementById("gxVal").innerText = Number(data.gx ?? 0).toFixed(5);
+        document.getElementById("gyVal").innerText = Number(data.gy ?? 0).toFixed(5);
+        document.getElementById("gzVal").innerText = Number(data.gz ?? 0).toFixed(5);
+
+        if (loggingEnabled) {
+          samples.push({
+            ts: Number(data.ts ?? Date.now()),
+            roll: Number(data.roll ?? 0),
+            pitch: Number(data.pitch ?? 0),
+            yaw: Number(data.yaw ?? 0),
+            ax: Number(data.ax ?? 0),
+            ay: Number(data.ay ?? 0),
+            az: Number(data.az ?? 0),
+            gx: Number(data.gx ?? 0),
+            gy: Number(data.gy ?? 0),
+            gz: Number(data.gz ?? 0),
+            qw: Number(data.qw ?? 0),
+            qx: Number(data.qx ?? 0),
+            qy: Number(data.qy ?? 0),
+            qz: Number(data.qz ?? 0)
+          });
+          updateSampleCount();
+        }
+
         if (
           data.qw !== undefined &&
           data.qx !== undefined &&
@@ -298,6 +428,9 @@ function publishSet(name, value) {
   if (!client || !baseTopic) return;
   client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
 }
+
+updateLoggingState();
+updateSampleCount();
 </script>
 </body>
 </html>
