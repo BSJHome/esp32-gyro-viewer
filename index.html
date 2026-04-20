@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ESP32 BMI160 Viewer V4</title>
+  <title>ESP32 BMI160 Viewer V5</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     body { margin:0; font-family: Arial, sans-serif; background:#111; color:#eee; }
-    .wrap { display:grid; grid-template-columns: 450px 1fr; min-height:100vh; }
+    .wrap { display:grid; grid-template-columns: 470px 1fr; min-height:100vh; }
     .panel { padding:16px; background:#1a1a1a; overflow:auto; }
     .viewer { position:relative; }
     .row { margin-bottom:12px; }
-    input, button { width:100%; padding:10px; margin-top:6px; box-sizing:border-box; }
+    input, button, select { width:100%; padding:10px; margin-top:6px; box-sizing:border-box; }
     button { cursor:pointer; }
     .status { padding:8px; background:#222; border-radius:8px; margin-bottom:12px; }
     .small { font-size:12px; opacity:.8; }
@@ -111,6 +111,20 @@
 
     <hr>
 
+    <h3>WiFi toggle</h3>
+    <div class="switch-row">
+      <div>
+        <div>WiFi aktiv</div>
+        <div class="small">OFF = ESP32 forsøger ikke at forbinde</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="wifiEnableToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <hr>
+
     <h3>WiFi-konfiguration</h3>
 
     <div class="row">
@@ -140,6 +154,35 @@
 
     <hr>
 
+    <h3>Acc range</h3>
+
+    <div class="row">
+      <label>Range mode</label>
+      <select id="accRangeMode">
+        <option value="fixed">Fast</option>
+        <option value="auto">Auto</option>
+      </select>
+      <button onclick="sendAccRangeMode()">Send range mode</button>
+    </div>
+
+    <div class="row">
+      <label>Fast accelerometer range</label>
+      <select id="fixedAccRangeG">
+        <option value="2">±2 g</option>
+        <option value="4">±4 g</option>
+        <option value="8" selected>±8 g</option>
+        <option value="16">±16 g</option>
+      </select>
+      <button onclick="sendFixedAccRange()">Send fast range</button>
+    </div>
+
+    <div class="row">
+      Aktiv acc-range: <span class="value" id="currentAccRange">-</span><br>
+      Range mode: <span class="value" id="currentAccRangeMode">-</span>
+    </div>
+
+    <hr>
+
     <h3>Orientering</h3>
     <div class="grid2">
       <div>Roll: <span class="value" id="rollVal">-</span></div>
@@ -162,6 +205,11 @@
       <div>GX: <span class="value" id="gxVal">-</span></div>
       <div>GY: <span class="value" id="gyVal">-</span></div>
       <div>GZ: <span class="value" id="gzVal">-</span></div>
+    </div>
+
+    <h3>Temperatur</h3>
+    <div class="row">
+      BMI160 temperatur: <span class="value" id="tempVal">-</span>
     </div>
 
     <hr>
@@ -190,11 +238,21 @@
 
     <hr>
 
-    <h3>Parametre</h3>
+    <h3>Publish mode</h3>
+    <div class="switch-row">
+      <div>
+        <div>Auto publish</div>
+        <div class="small">ON = publish følger aktiv acc-range</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="autoPublishToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
 
     <div class="row">
-      <label>Publish interval ms</label>
-      <input id="publishMs" type="number" value="100">
+      <label>Manual publish interval ms</label>
+      <input id="publishMs" type="number" value="60">
       <button onclick="publishSet('publish_interval_ms', document.getElementById('publishMs').value)">Send</button>
     </div>
 
@@ -235,7 +293,7 @@
     <div class="switch-row">
       <div>
         <div>Lav browser-log</div>
-        <div class="small">Gemmer samples lokalt i browseren til CSV-download</div>
+        <div class="small">OFF = vis live, men gem ikke samples</div>
       </div>
       <label class="switch">
         <input type="checkbox" id="logToggle">
@@ -266,11 +324,14 @@ let baseTopic = "";
 let samples = [];
 let loggingEnabled = false;
 
+let wifiFieldsLoadedOnce = false;
+let wifiFieldsDirty = false;
+
 const canvas = document.getElementById("c");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 
 function resizeRenderer() {
-  const panelWidth = 450;
+  const panelWidth = 470;
   const w = Math.max(window.innerWidth - panelWidth, 300);
   const h = window.innerHeight;
   renderer.setSize(w, h);
@@ -331,6 +392,21 @@ document.getElementById("logToggle").addEventListener("change", (e) => {
   setStatus(loggingEnabled ? "Browser-log: ON" : "Browser-log: OFF");
 });
 
+document.getElementById("wifiEnableToggle").addEventListener("change", (e) => {
+  publishSet("wifi_enable", e.target.checked ? "ON" : "OFF");
+});
+
+document.getElementById("autoPublishToggle").addEventListener("change", (e) => {
+  publishSet("auto_publish_enable", e.target.checked ? "ON" : "OFF");
+});
+
+["wifiSsid1", "wifiPass1", "wifiSsid2", "wifiPass2"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener("input", () => {
+    wifiFieldsDirty = true;
+  });
+});
+
 function clearLog() {
   samples = [];
   updateSampleCount();
@@ -347,7 +423,9 @@ function downloadCSV() {
     "ts","roll","pitch","yaw",
     "ax","ay","az",
     "gx","gy","gz",
-    "qw","qx","qy","qz","wifi_ssid","ip"
+    "qw","qx","qy","qz",
+    "temp_c","acc_range_mode","acc_range_g",
+    "wifi_ssid","ip"
   ];
 
   const rows = samples.map(s => [
@@ -355,6 +433,7 @@ function downloadCSV() {
     s.ax, s.ay, s.az,
     s.gx, s.gy, s.gz,
     s.qw, s.qx, s.qy, s.qz,
+    s.temp_c, s.acc_range_mode, s.acc_range_g,
     s.wifi_ssid, s.ip
   ]);
 
@@ -436,12 +515,17 @@ function connectMQTT() {
     }
 
     if (topic === `${baseTopic}/cfg/wifi/ssid1`) {
-      document.getElementById("wifiSsid1").value = msg;
+      if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
+        document.getElementById("wifiSsid1").value = msg;
+      }
       return;
     }
 
     if (topic === `${baseTopic}/cfg/wifi/ssid2`) {
-      document.getElementById("wifiSsid2").value = msg;
+      if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
+        document.getElementById("wifiSsid2").value = msg;
+        wifiFieldsLoadedOnce = true;
+      }
       return;
     }
 
@@ -452,6 +536,32 @@ function connectMQTT() {
 
     if (topic === `${baseTopic}/cfg/wifi/current_ip`) {
       document.getElementById("currentIp").innerText = msg || "-";
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/current_acc_range_g`) {
+      document.getElementById("currentAccRange").innerText = `±${msg} g`;
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/acc_range_mode`) {
+      document.getElementById("currentAccRangeMode").innerText = msg;
+      document.getElementById("accRangeMode").value = msg;
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/fixed_acc_range_g`) {
+      document.getElementById("fixedAccRangeG").value = msg;
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/wifi_enable`) {
+      document.getElementById("wifiEnableToggle").checked = (msg === "ON");
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/auto_publish_enable`) {
+      document.getElementById("autoPublishToggle").checked = (msg === "ON");
       return;
     }
 
@@ -472,8 +582,11 @@ function connectMQTT() {
         document.getElementById("gyVal").innerText = Number(data.gy ?? 0).toFixed(5);
         document.getElementById("gzVal").innerText = Number(data.gz ?? 0).toFixed(5);
 
+        document.getElementById("tempVal").innerText = `${Number(data.temp_c ?? 0).toFixed(2)} °C`;
         document.getElementById("currentWifi").innerText = data.wifi_ssid || "-";
         document.getElementById("currentIp").innerText = data.ip || "-";
+        document.getElementById("currentAccRange").innerText = `±${data.acc_range_g} g`;
+        document.getElementById("currentAccRangeMode").innerText = data.acc_range_mode || "-";
 
         if (loggingEnabled) {
           samples.push({
@@ -491,6 +604,9 @@ function connectMQTT() {
             qx: Number(data.qx ?? 0),
             qy: Number(data.qy ?? 0),
             qz: Number(data.qz ?? 0),
+            temp_c: Number(data.temp_c ?? 0),
+            acc_range_mode: data.acc_range_mode || "",
+            acc_range_g: Number(data.acc_range_g ?? 0),
             wifi_ssid: data.wifi_ssid || "",
             ip: data.ip || ""
           });
@@ -527,10 +643,17 @@ function subscribeToCurrentDevice() {
 
   client.subscribe(`${baseTopic}/state/json`);
   client.subscribe(`${baseTopic}/availability`);
+
   client.subscribe(`${baseTopic}/cfg/wifi/ssid1`);
   client.subscribe(`${baseTopic}/cfg/wifi/ssid2`);
   client.subscribe(`${baseTopic}/cfg/wifi/current_ssid`);
   client.subscribe(`${baseTopic}/cfg/wifi/current_ip`);
+  client.subscribe(`${baseTopic}/cfg/wifi_enable`);
+
+  client.subscribe(`${baseTopic}/cfg/acc_range_mode`);
+  client.subscribe(`${baseTopic}/cfg/fixed_acc_range_g`);
+  client.subscribe(`${baseTopic}/cfg/current_acc_range_g`);
+  client.subscribe(`${baseTopic}/cfg/auto_publish_enable`);
 }
 
 function publishCmd(cmd, payload) {
@@ -556,6 +679,9 @@ function saveWifiConfig() {
   client.publish(`${baseTopic}/cmd/wifi/ssid2/set`, ssid2);
   client.publish(`${baseTopic}/cmd/wifi/pass2/set`, pass2);
 
+  wifiFieldsDirty = false;
+  wifiFieldsLoadedOnce = true;
+
   setStatus("WiFi-indstillinger sendt til ESP32");
 }
 
@@ -563,6 +689,18 @@ function reconnectWifi() {
   if (!client || !baseTopic) return;
   client.publish(`${baseTopic}/cmd/wifi/reconnect`, "PRESS");
   setStatus("WiFi reconnect sendt");
+}
+
+function sendAccRangeMode() {
+  if (!client || !baseTopic) return;
+  const v = document.getElementById("accRangeMode").value;
+  client.publish(`${baseTopic}/cmd/acc_range_mode/set`, v);
+}
+
+function sendFixedAccRange() {
+  if (!client || !baseTopic) return;
+  const v = document.getElementById("fixedAccRangeG").value;
+  client.publish(`${baseTopic}/cmd/fixed_acc_range_g/set`, v);
 }
 
 updateLoggingState();
