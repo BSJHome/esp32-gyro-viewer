@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ESP32 BMI160 Viewer</title>
+  <title>ESP32 BMI160 Viewer V4</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     body { margin:0; font-family: Arial, sans-serif; background:#111; color:#eee; }
-    .wrap { display:grid; grid-template-columns: 420px 1fr; min-height:100vh; }
+    .wrap { display:grid; grid-template-columns: 450px 1fr; min-height:100vh; }
     .panel { padding:16px; background:#1a1a1a; overflow:auto; }
     .viewer { position:relative; }
     .row { margin-bottom:12px; }
@@ -21,6 +21,53 @@
     .value { font-weight:bold; }
     canvas { display:block; width:100%; height:100%; }
     hr { border:0; border-top:1px solid #333; margin:16px 0; }
+
+    .switch-row {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:8px 0;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 56px;
+      height: 30px;
+      flex: 0 0 auto;
+    }
+
+    .switch input { display:none; }
+
+    .slider {
+      position:absolute;
+      cursor:pointer;
+      top:0; left:0; right:0; bottom:0;
+      background:#555;
+      transition:.25s;
+      border-radius:30px;
+    }
+
+    .slider:before {
+      position:absolute;
+      content:"";
+      height:22px;
+      width:22px;
+      left:4px;
+      bottom:4px;
+      background:white;
+      transition:.25s;
+      border-radius:50%;
+    }
+
+    input:checked + .slider {
+      background:#2e7d32;
+    }
+
+    input:checked + .slider:before {
+      transform:translateX(26px);
+    }
   </style>
 </head>
 <body>
@@ -58,6 +105,37 @@
     <div class="row">
       <div>Aktiv device: <span class="value" id="activeDevice">-</span></div>
       <div>Base topic: <span class="value" id="activeTopic">-</span></div>
+      <div>Aktuel WiFi: <span class="value" id="currentWifi">-</span></div>
+      <div>IP: <span class="value" id="currentIp">-</span></div>
+    </div>
+
+    <hr>
+
+    <h3>WiFi-konfiguration</h3>
+
+    <div class="row">
+      <label>WiFi 1 SSID</label>
+      <input id="wifiSsid1" value="" />
+    </div>
+
+    <div class="row">
+      <label>WiFi 1 password</label>
+      <input id="wifiPass1" type="password" value="" />
+    </div>
+
+    <div class="row">
+      <label>WiFi 2 SSID</label>
+      <input id="wifiSsid2" value="" />
+    </div>
+
+    <div class="row">
+      <label>WiFi 2 password</label>
+      <input id="wifiPass2" type="password" value="" />
+    </div>
+
+    <div class="grid2">
+      <button onclick="saveWifiConfig()">Gem WiFi-indstillinger</button>
+      <button onclick="reconnectWifi()">Genforbind WiFi</button>
     </div>
 
     <hr>
@@ -102,8 +180,8 @@
     <div class="grid2">
       <button onclick="publishSet('publish_enable', 'ON')">Publish ON</button>
       <button onclick="publishSet('publish_enable', 'OFF')">Publish OFF</button>
-      <button onclick="publishSet('log_enable', 'ON')">Log ON</button>
-      <button onclick="publishSet('log_enable', 'OFF')">Log OFF</button>
+      <button onclick="publishSet('log_enable', 'ON')">Serial log ON</button>
+      <button onclick="publishSet('log_enable', 'OFF')">Serial log OFF</button>
       <button onclick="publishSet('bias_learning_enable', 'ON')">Bias ON</button>
       <button onclick="publishSet('bias_learning_enable', 'OFF')">Bias OFF</button>
       <button onclick="publishSet('home_enable', 'ON')">Home ON</button>
@@ -152,17 +230,27 @@
 
     <hr>
 
-    <h3>Data-log</h3>
-    <div class="grid2">
-      <button onclick="startLogging()">Start log</button>
-      <button onclick="stopLogging()">Stop log</button>
-      <button onclick="clearLog()">Ryd log</button>
-      <button onclick="downloadCSV()">Download CSV</button>
+    <h3>Browser-log</h3>
+
+    <div class="switch-row">
+      <div>
+        <div>Lav browser-log</div>
+        <div class="small">Gemmer samples lokalt i browseren til CSV-download</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="logToggle">
+        <span class="slider"></span>
+      </label>
     </div>
 
     <div class="row">
       Logging: <span class="value" id="loggingState">OFF</span><br>
       Samples: <span class="value" id="sampleCount">0</span>
+    </div>
+
+    <div class="grid2">
+      <button onclick="clearLog()">Ryd log</button>
+      <button onclick="downloadCSV()">Download CSV</button>
     </div>
   </div>
 
@@ -178,12 +266,11 @@ let baseTopic = "";
 let samples = [];
 let loggingEnabled = false;
 
-// THREE
 const canvas = document.getElementById("c");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 
 function resizeRenderer() {
-  const panelWidth = 420;
+  const panelWidth = 450;
   const w = Math.max(window.innerWidth - panelWidth, 300);
   const h = window.innerHeight;
   renderer.setSize(w, h);
@@ -219,7 +306,6 @@ animate();
 resizeRenderer();
 window.addEventListener("resize", resizeRenderer);
 
-// UI helpers
 function setStatus(txt) {
   document.getElementById("statusBox").innerText = txt;
 }
@@ -239,22 +325,16 @@ function updateLoggingState() {
   document.getElementById("loggingState").innerText = loggingEnabled ? "ON" : "OFF";
 }
 
-function startLogging() {
-  loggingEnabled = true;
+document.getElementById("logToggle").addEventListener("change", (e) => {
+  loggingEnabled = e.target.checked;
   updateLoggingState();
-  setStatus("Logging: ON");
-}
-
-function stopLogging() {
-  loggingEnabled = false;
-  updateLoggingState();
-  setStatus("Logging: OFF");
-}
+  setStatus(loggingEnabled ? "Browser-log: ON" : "Browser-log: OFF");
+});
 
 function clearLog() {
   samples = [];
   updateSampleCount();
-  setStatus("Log ryddet");
+  setStatus("Browser-log ryddet");
 }
 
 function downloadCSV() {
@@ -267,14 +347,15 @@ function downloadCSV() {
     "ts","roll","pitch","yaw",
     "ax","ay","az",
     "gx","gy","gz",
-    "qw","qx","qy","qz"
+    "qw","qx","qy","qz","wifi_ssid","ip"
   ];
 
   const rows = samples.map(s => [
     s.ts, s.roll, s.pitch, s.yaw,
     s.ax, s.ay, s.az,
     s.gx, s.gy, s.gz,
-    s.qw, s.qx, s.qy, s.qz
+    s.qw, s.qx, s.qy, s.qz,
+    s.wifi_ssid, s.ip
   ]);
 
   const csv = [
@@ -294,7 +375,6 @@ function downloadCSV() {
   URL.revokeObjectURL(url);
 }
 
-// MQTT
 function connectMQTT() {
   const brokerUrl = document.getElementById("brokerUrl").value.trim();
   const username = document.getElementById("username").value.trim();
@@ -324,11 +404,10 @@ function connectMQTT() {
 
     if (manualDeviceId) {
       setActiveDevice(manualDeviceId);
-      client.subscribe(`${baseTopic}/state/json`);
-      client.subscribe(`${baseTopic}/availability`);
+      subscribeToCurrentDevice();
     } else {
-      client.subscribe(`gyro/+/state/json`);
-      client.subscribe(`gyro/+/availability`);
+      client.subscribe("gyro/+/state/json");
+      client.subscribe("gyro/+/availability");
     }
   });
 
@@ -345,15 +424,34 @@ function connectMQTT() {
 
       if (!activeDeviceId) {
         setActiveDevice(detectedDeviceId);
+        subscribeToCurrentDevice();
       }
 
-      if (detectedDeviceId !== activeDeviceId) {
-        return;
-      }
+      if (detectedDeviceId !== activeDeviceId) return;
     }
 
     if (topic === `${baseTopic}/availability`) {
       setStatus("Availability: " + msg);
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/wifi/ssid1`) {
+      document.getElementById("wifiSsid1").value = msg;
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/wifi/ssid2`) {
+      document.getElementById("wifiSsid2").value = msg;
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/wifi/current_ssid`) {
+      document.getElementById("currentWifi").innerText = msg || "-";
+      return;
+    }
+
+    if (topic === `${baseTopic}/cfg/wifi/current_ip`) {
+      document.getElementById("currentIp").innerText = msg || "-";
       return;
     }
 
@@ -374,6 +472,9 @@ function connectMQTT() {
         document.getElementById("gyVal").innerText = Number(data.gy ?? 0).toFixed(5);
         document.getElementById("gzVal").innerText = Number(data.gz ?? 0).toFixed(5);
 
+        document.getElementById("currentWifi").innerText = data.wifi_ssid || "-";
+        document.getElementById("currentIp").innerText = data.ip || "-";
+
         if (loggingEnabled) {
           samples.push({
             ts: Number(data.ts ?? Date.now()),
@@ -389,7 +490,9 @@ function connectMQTT() {
             qw: Number(data.qw ?? 0),
             qx: Number(data.qx ?? 0),
             qy: Number(data.qy ?? 0),
-            qz: Number(data.qz ?? 0)
+            qz: Number(data.qz ?? 0),
+            wifi_ssid: data.wifi_ssid || "",
+            ip: data.ip || ""
           });
           updateSampleCount();
         }
@@ -419,6 +522,17 @@ function connectMQTT() {
   });
 }
 
+function subscribeToCurrentDevice() {
+  if (!client || !baseTopic) return;
+
+  client.subscribe(`${baseTopic}/state/json`);
+  client.subscribe(`${baseTopic}/availability`);
+  client.subscribe(`${baseTopic}/cfg/wifi/ssid1`);
+  client.subscribe(`${baseTopic}/cfg/wifi/ssid2`);
+  client.subscribe(`${baseTopic}/cfg/wifi/current_ssid`);
+  client.subscribe(`${baseTopic}/cfg/wifi/current_ip`);
+}
+
 function publishCmd(cmd, payload) {
   if (!client || !baseTopic) return;
   client.publish(`${baseTopic}/cmd/${cmd}`, payload);
@@ -427,6 +541,28 @@ function publishCmd(cmd, payload) {
 function publishSet(name, value) {
   if (!client || !baseTopic) return;
   client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
+}
+
+function saveWifiConfig() {
+  if (!client || !baseTopic) return;
+
+  const ssid1 = document.getElementById("wifiSsid1").value;
+  const pass1 = document.getElementById("wifiPass1").value;
+  const ssid2 = document.getElementById("wifiSsid2").value;
+  const pass2 = document.getElementById("wifiPass2").value;
+
+  client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, ssid1);
+  client.publish(`${baseTopic}/cmd/wifi/pass1/set`, pass1);
+  client.publish(`${baseTopic}/cmd/wifi/ssid2/set`, ssid2);
+  client.publish(`${baseTopic}/cmd/wifi/pass2/set`, pass2);
+
+  setStatus("WiFi-indstillinger sendt til ESP32");
+}
+
+function reconnectWifi() {
+  if (!client || !baseTopic) return;
+  client.publish(`${baseTopic}/cmd/wifi/reconnect`, "PRESS");
+  setStatus("WiFi reconnect sendt");
 }
 
 updateLoggingState();
