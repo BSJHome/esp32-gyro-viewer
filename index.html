@@ -1,3 +1,38 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<title>ESP32 3D Viewer</title>
+<style>
+  body { margin: 0; background: #111; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+
+// ====== SCENE ======
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.5, 4);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ====== LYS ======
+const light1 = new THREE.DirectionalLight(0xffffff, 1);
+light1.position.set(3, 3, 3);
+scene.add(light1);
+
+const light2 = new THREE.AmbientLight(0x888888);
+scene.add(light2);
+
 // ====== GROUP ======
 const group = new THREE.Group();
 scene.add(group);
@@ -6,12 +41,11 @@ scene.add(group);
 const loader = new THREE.TextureLoader();
 const frontTexture = loader.load("velux_box.png");
 
-// ====== BOX SIZE (tilpasset dit billede format) ======
+// ====== BOX ======
 const boxW = 1.6;
-const boxH = 2.4;   // højere fordi billedet er højt
-const boxD = 0.35;
+const boxH = 2.4;
+const boxD = 0.5;
 
-// ====== MATERIALER ======
 const frontMat = new THREE.MeshStandardMaterial({
   map: frontTexture,
   roughness: 0.9
@@ -22,7 +56,6 @@ const sideMat = new THREE.MeshStandardMaterial({
   roughness: 0.9
 });
 
-// rækkefølge: højre, venstre, top, bund, front, bag
 const materials = [
   sideMat,
   sideMat,
@@ -32,48 +65,40 @@ const materials = [
   sideMat
 ];
 
-// ====== SELVE KASSEN ======
 const body = new THREE.Mesh(
   new THREE.BoxGeometry(boxW, boxH, boxD),
   materials
 );
+
 group.add(body);
 
-// ====== LYS ======
-const light1 = new THREE.DirectionalLight(0xffffff, 1.0);
-light1.position.set(3, 3, 3);
-scene.add(light1);
-
-const light2 = new THREE.AmbientLight(0x888888);
-scene.add(light2);
-
 // ====== AKSER ======
-const axisLength = 1.3;
+const axisLength = 1.4;
 const zOffset = boxD / 2 + 0.05;
 
-// X (rød)
+// X
 const xAxis = new THREE.ArrowHelper(
-  new THREE.Vector3(1, 0, 0),
-  new THREE.Vector3(0, 0, zOffset),
+  new THREE.Vector3(1,0,0),
+  new THREE.Vector3(0,0,zOffset),
   axisLength,
   0xff0000
 );
 group.add(xAxis);
 
-// Y (grøn)
+// Y
 const yAxis = new THREE.ArrowHelper(
-  new THREE.Vector3(0, 1, 0),
-  new THREE.Vector3(0, 0, zOffset),
+  new THREE.Vector3(0,1,0),
+  new THREE.Vector3(0,0,zOffset),
   axisLength,
   0x00ff00
 );
 group.add(yAxis);
 
-// Z (blå)
+// Z
 const zAxis = new THREE.ArrowHelper(
-  new THREE.Vector3(0, 0, 1),
-  new THREE.Vector3(0, 0, zOffset),
-  0.8,
+  new THREE.Vector3(0,0,1),
+  new THREE.Vector3(0,0,zOffset),
+  1.0,
   0x0066ff
 );
 group.add(zAxis);
@@ -85,11 +110,11 @@ function makeLabel(text, color) {
   canvas.height = 128;
 
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
+  ctx.fillStyle = "#" + color.toString(16).padStart(6,"0");
   ctx.font = "bold 80px Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, 128, 64);
+  ctx.fillText(text,128,64);
 
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({
@@ -99,26 +124,59 @@ function makeLabel(text, color) {
   });
 
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(0.4, 0.2, 1);
+  sprite.scale.set(0.5,0.25,1);
   return sprite;
 }
 
 const labelX = makeLabel("X", 0xff0000);
-labelX.position.set(axisLength + 0.25, 0, zOffset);
+labelX.position.set(axisLength + 0.3, 0, zOffset);
 group.add(labelX);
 
 const labelY = makeLabel("Y", 0x00ff00);
-labelY.position.set(0, axisLength + 0.25, zOffset);
+labelY.position.set(0, axisLength + 0.3, zOffset);
 group.add(labelY);
 
 const labelZ = makeLabel("Z", 0x0066ff);
-labelZ.position.set(0, 0, zOffset + 1.0);
+labelZ.position.set(0, 0, zOffset + 1.2);
 group.add(labelZ);
 
-// ====== CENTER DOT ======
+// ====== CENTER ======
 const center = new THREE.Mesh(
-  new THREE.SphereGeometry(0.05, 16, 16),
+  new THREE.SphereGeometry(0.06, 16, 16),
   new THREE.MeshBasicMaterial({ color: 0xffffff })
 );
-center.position.set(0, 0, zOffset);
+center.position.set(0,0,zOffset);
 group.add(center);
+
+// ====== ROTATION TEST (fjern senere) ======
+let t = 0;
+
+// ====== ANIMATE ======
+function animate() {
+  requestAnimationFrame(animate);
+
+  // test rotation (fjern når ESP32 data kommer)
+  t += 0.01;
+  group.rotation.x = Math.sin(t)*0.5;
+  group.rotation.y = t*0.5;
+
+  // labels følger kamera
+  labelX.lookAt(camera.position);
+  labelY.lookAt(camera.position);
+  labelZ.lookAt(camera.position);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ====== RESIZE ======
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+
+</body>
+</html>
