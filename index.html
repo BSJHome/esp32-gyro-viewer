@@ -1,776 +1,124 @@
-<!DOCTYPE html>
-<html lang="da">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 BMI160 Viewer</title>
-
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #eee;
-    }
-
-    .wrap {
-      display: grid;
-      grid-template-columns: 470px 1fr;
-      min-height: 100vh;
-    }
-
-    .panel {
-      padding: 16px;
-      background: #181818;
-      overflow-y: auto;
-      box-sizing: border-box;
-    }
-
-    .viewer {
-      position: relative;
-      background: #050505;
-    }
-
-    h2, h3 {
-      margin-top: 14px;
-    }
-
-    input, button {
-      width: 100%;
-      padding: 10px;
-      margin-top: 6px;
-      box-sizing: border-box;
-      font-size: 14px;
-    }
-
-    button {
-      cursor: pointer;
-    }
-
-    .row {
-      margin-bottom: 12px;
-    }
-
-    .status {
-      padding: 10px;
-      background: #222;
-      border-radius: 8px;
-      margin: 12px 0;
-    }
-
-    .grid2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 8px;
-    }
-
-    .grid3 {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-      margin-top: 8px;
-    }
-
-    .value {
-      font-weight: bold;
-      color: #ffffff;
-    }
-
-    .small {
-      font-size: 12px;
-      opacity: 0.75;
-      line-height: 1.35;
-    }
-
-    hr {
-      border: 0;
-      border-top: 1px solid #333;
-      margin: 18px 0;
-    }
-
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
-    .switch-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 8px 0;
-    }
-
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 56px;
-      height: 30px;
-      flex: 0 0 auto;
-    }
-
-    .switch input {
-      display: none;
-    }
-
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: #555;
-      transition: .25s;
-      border-radius: 30px;
-    }
-
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 22px;
-      width: 22px;
-      left: 4px;
-      bottom: 4px;
-      background: white;
-      transition: .25s;
-      border-radius: 50%;
-    }
-
-    input:checked + .slider {
-      background: #2e7d32;
-    }
-
-    input:checked + .slider:before {
-      transform: translateX(26px);
-    }
-
-    @media (max-width: 900px) {
-      .wrap {
-        display: block;
-      }
-
-      .viewer {
-        height: 420px;
-      }
-    }
-  </style>
-</head>
-
-<body>
-<div class="wrap">
-
-  <div class="panel">
-    <h2>ESP32 BMI160 Viewer</h2>
-
-    <div class="row">
-      <label>WSS broker URL</label>
-      <input id="brokerUrl" value="wss://09cf903bcc164264a7e7668d4cc7478f.s1.eu.hivemq.cloud:8884/mqtt">
-    </div>
-
-    <div class="row">
-      <label>MQTT brugernavn</label>
-      <input id="username" value="gyro_cloud">
-    </div>
-
-    <div class="row">
-      <label>MQTT password</label>
-      <input id="password" type="password">
-    </div>
-
-    <div class="row">
-      <label>Device ID valgfrit</label>
-      <input id="deviceId">
-      <div class="small">Lad feltet være tomt for auto-detect.</div>
-    </div>
-
-    <button onclick="connectMQTT()">Forbind</button>
-
-    <div class="status" id="statusBox">Ikke forbundet</div>
-
-    <div>
-      Aktiv device: <span class="value" id="activeDevice">-</span><br>
-      Base topic: <span class="value" id="activeTopic">-</span><br>
-      WiFi: <span class="value" id="currentWifi">-</span><br>
-      IP: <span class="value" id="currentIp">-</span>
-    </div>
-
-    <hr>
-
-    <h3>WiFi</h3>
-
-    <div class="switch-row">
-      <div>
-        <div>WiFi aktiv</div>
-        <div class="small">OFF = ESP32 forsøger ikke at forbinde</div>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="wifiEnableToggle">
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="row">
-      <label>WiFi 1 SSID</label>
-      <input id="wifiSsid1">
-    </div>
-
-    <div class="row">
-      <label>WiFi 1 password</label>
-      <input id="wifiPass1" type="password">
-    </div>
-
-    <div class="row">
-      <label>WiFi 2 SSID</label>
-      <input id="wifiSsid2">
-    </div>
-
-    <div class="row">
-      <label>WiFi 2 password</label>
-      <input id="wifiPass2" type="password">
-    </div>
-
-    <div class="grid2">
-      <button onclick="saveWifiConfig()">Gem WiFi</button>
-      <button onclick="publishCmd('wifi/reconnect','PRESS')">Genforbind WiFi</button>
-    </div>
-
-    <hr>
-
-    <h3>Akse-wizard</h3>
-
-    <p class="small">
-      Denne bruges før sensoren monteres i pakken. Systemet foreslår en sensorakse,
-      men den låses først når du trykker Godkend.
-    </p>
-
-    <div class="status">
-      Status: <span class="value" id="axisStatus">-</span><br>
-      Wizard aktiv: <span class="value" id="wizardActive">-</span><br>
-      Aktuelt trin: <span class="value" id="wizardStep">-</span><br>
-      Forslag: <span class="value" id="pendingAxis">-</span>
-    </div>
-
-    <div class="grid2">
-      <button onclick="publishCmd('axis_wizard/start','PRESS')">Start wizard</button>
-      <button onclick="publishCmd('axis_wizard/reset','PRESS')">Nulstil mapping</button>
-    </div>
-
-    <div class="grid2">
-      <button onclick="publishCmd('axis_wizard/capture','PRESS')">Optag bevægelse</button>
-      <button onclick="publishCmd('axis_wizard/approve','PRESS')">✓ Godkend akse</button>
-    </div>
-
-    <button onclick="publishCmd('axis_wizard/next','PRESS')">Næste akse</button>
-
-    <div class="row">
-      X mapping: <span class="value" id="mapX">-</span><br>
-      Y mapping: <span class="value" id="mapY">-</span><br>
-      Z mapping: <span class="value" id="mapZ">-</span><br>
-      Mapping valid: <span class="value" id="mapValid">-</span>
-    </div>
-
-    <hr>
-
-    <h3>Home / nulpunkt</h3>
-
-    <p class="small">
-      Dette er separat fra akse-mapping. Bruges når pakken ligger i sin startposition.
-    </p>
-
-    <div class="grid2">
-      <button onclick="publishCmd('set_home','PRESS')">Sæt nul / Home</button>
-      <button onclick="publishCmd('clear_home','PRESS')">Ryd Home</button>
-    </div>
-
-    <hr>
-
-    <h3>Kommandoer</h3>
-
-    <div class="grid2">
-      <button onclick="publishCmd('calibrate_gyro','PRESS')">Kalibrer gyro</button>
-      <button onclick="publishCmd('reset_filter','PRESS')">Reset filter</button>
-      <button onclick="publishSet('publish_enable','ON')">Publish ON</button>
-      <button onclick="publishSet('publish_enable','OFF')">Publish OFF</button>
-      <button onclick="publishSet('log_enable','ON')">Serial log ON</button>
-      <button onclick="publishSet('log_enable','OFF')">Serial log OFF</button>
-    </div>
-
-    <hr>
-
-    <h3>Orientering</h3>
-
-    <div class="grid3">
-      <div>Roll: <span class="value" id="rollVal">-</span></div>
-      <div>Pitch: <span class="value" id="pitchVal">-</span></div>
-      <div>Yaw: <span class="value" id="yawVal">-</span></div>
-    </div>
-
-    <h3>Acceleration</h3>
-
-    <div class="grid3">
-      <div>AX: <span class="value" id="axVal">-</span></div>
-      <div>AY: <span class="value" id="ayVal">-</span></div>
-      <div>AZ: <span class="value" id="azVal">-</span></div>
-    </div>
-
-    <h3>Gyro</h3>
-
-    <div class="grid3">
-      <div>GX: <span class="value" id="gxVal">-</span></div>
-      <div>GY: <span class="value" id="gyVal">-</span></div>
-      <div>GZ: <span class="value" id="gzVal">-</span></div>
-    </div>
-
-    <div class="row">
-      Temperatur: <span class="value" id="tempVal">-</span><br>
-      Home sat: <span class="value" id="homeVal">-</span>
-    </div>
-
-    <hr>
-
-    <h3>Browser-log</h3>
-
-    <div class="switch-row">
-      <div>
-        <div>Lav browser-log</div>
-        <div class="small">Gemmer CSV lokalt i browseren</div>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="logToggle">
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    Samples: <span class="value" id="sampleCount">0</span>
-
-    <div class="grid2">
-      <button onclick="clearLog()">Ryd log</button>
-      <button onclick="downloadCSV()">Download CSV</button>
-    </div>
-
-  </div>
-
-  <div class="viewer">
-    <canvas id="c"></canvas>
-  </div>
-
-</div>
-
-<script>
-let client = null;
-let activeDeviceId = "";
-let baseTopic = "";
-let samples = [];
-let loggingEnabled = false;
-let wifiFieldsLoadedOnce = false;
-let wifiFieldsDirty = false;
-
-const canvas = document.getElementById("c");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505);
-
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-camera.position.set(0, 0, 4);
-
-scene.add(new THREE.AmbientLight(0x888888));
-
-const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(2, 2, 2);
-scene.add(light);
-
+// ====== GROUP ======
 const group = new THREE.Group();
 scene.add(group);
 
+// ====== LOAD TEXTURE ======
+const loader = new THREE.TextureLoader();
+const frontTexture = loader.load("velux_box.png");
+
+// ====== BOX SIZE (tilpasset dit billede format) ======
+const boxW = 1.6;
+const boxH = 2.4;   // højere fordi billedet er højt
+const boxD = 0.35;
+
+// ====== MATERIALER ======
+const frontMat = new THREE.MeshStandardMaterial({
+  map: frontTexture,
+  roughness: 0.9
+});
+
+const sideMat = new THREE.MeshStandardMaterial({
+  color: 0x9a8a6a,
+  roughness: 0.9
+});
+
+// rækkefølge: højre, venstre, top, bund, front, bag
+const materials = [
+  sideMat,
+  sideMat,
+  sideMat,
+  sideMat,
+  frontMat,
+  sideMat
+];
+
+// ====== SELVE KASSEN ======
 const body = new THREE.Mesh(
-  new THREE.BoxGeometry(1.4, 0.28, 2.2),
-  new THREE.MeshNormalMaterial()
+  new THREE.BoxGeometry(boxW, boxH, boxD),
+  materials
 );
 group.add(body);
 
-const nose = new THREE.Mesh(
-  new THREE.ConeGeometry(0.35, 0.7, 32),
-  new THREE.MeshNormalMaterial()
+// ====== LYS ======
+const light1 = new THREE.DirectionalLight(0xffffff, 1.0);
+light1.position.set(3, 3, 3);
+scene.add(light1);
+
+const light2 = new THREE.AmbientLight(0x888888);
+scene.add(light2);
+
+// ====== AKSER ======
+const axisLength = 1.3;
+const zOffset = boxD / 2 + 0.05;
+
+// X (rød)
+const xAxis = new THREE.ArrowHelper(
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(0, 0, zOffset),
+  axisLength,
+  0xff0000
 );
-nose.rotation.x = Math.PI / 2;
-nose.position.z = -1.45;
-group.add(nose);
+group.add(xAxis);
 
-function resizeRenderer() {
-  const panelWidth = window.innerWidth > 900 ? 470 : 0;
-  const w = Math.max(window.innerWidth - panelWidth, 300);
-  const h = window.innerWidth > 900 ? window.innerHeight : 420;
+// Y (grøn)
+const yAxis = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, 0, zOffset),
+  axisLength,
+  0x00ff00
+);
+group.add(yAxis);
 
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
+// Z (blå)
+const zAxis = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(0, 0, zOffset),
+  0.8,
+  0x0066ff
+);
+group.add(zAxis);
 
-resizeRenderer();
-window.addEventListener("resize", resizeRenderer);
+// ====== LABELS ======
+function makeLabel(text, color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
 
-function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
-}
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
+  ctx.font = "bold 80px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 128, 64);
 
-animate();
-
-function setStatus(txt) {
-  document.getElementById("statusBox").innerText = txt;
-}
-
-function setActiveDevice(deviceId) {
-  activeDeviceId = deviceId;
-  baseTopic = `gyro/${deviceId}`;
-
-  document.getElementById("activeDevice").innerText = deviceId;
-  document.getElementById("activeTopic").innerText = baseTopic;
-}
-
-document.getElementById("logToggle").addEventListener("change", e => {
-  loggingEnabled = e.target.checked;
-});
-
-document.getElementById("wifiEnableToggle").addEventListener("change", e => {
-  publishSet("wifi_enable", e.target.checked ? "ON" : "OFF");
-});
-
-["wifiSsid1", "wifiPass1", "wifiSsid2", "wifiPass2"].forEach(id => {
-  document.getElementById(id).addEventListener("input", () => {
-    wifiFieldsDirty = true;
-  });
-});
-
-function connectMQTT() {
-  const brokerUrl = document.getElementById("brokerUrl").value.trim();
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value;
-  const manualDeviceId = document.getElementById("deviceId").value.trim();
-
-  if (client) {
-    try { client.end(true); } catch(e) {}
-  }
-
-  setStatus("Forbinder...");
-
-  client = mqtt.connect(brokerUrl, {
-    username,
-    password,
-    clean: true,
-    reconnectPeriod: 2000
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false
   });
 
-  client.on("connect", () => {
-    setStatus("Forbundet");
-
-    if (manualDeviceId) {
-      setActiveDevice(manualDeviceId);
-      subscribeToCurrentDevice();
-    } else {
-      client.subscribe("gyro/+/state/json");
-      client.subscribe("gyro/+/availability");
-    }
-  });
-
-  client.on("error", err => {
-    setStatus("Fejl: " + err.message);
-  });
-
-  client.on("offline", () => {
-    setStatus("Offline");
-  });
-
-  client.on("reconnect", () => {
-    setStatus("Genforbinder...");
-  });
-
-  client.on("message", (topic, payload) => {
-    const msg = payload.toString();
-    const parts = topic.split("/");
-
-    if (parts.length >= 4 && parts[0] === "gyro") {
-      const detectedDeviceId = parts[1];
-
-      if (!activeDeviceId) {
-        setActiveDevice(detectedDeviceId);
-        subscribeToCurrentDevice();
-      }
-
-      if (detectedDeviceId !== activeDeviceId) return;
-    }
-
-    handleMessage(topic, msg);
-  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.4, 0.2, 1);
+  return sprite;
 }
 
-function subscribeToCurrentDevice() {
-  if (!client || !baseTopic) return;
+const labelX = makeLabel("X", 0xff0000);
+labelX.position.set(axisLength + 0.25, 0, zOffset);
+group.add(labelX);
 
-  const topics = [
-    "state/json",
-    "availability",
+const labelY = makeLabel("Y", 0x00ff00);
+labelY.position.set(0, axisLength + 0.25, zOffset);
+group.add(labelY);
 
-    "cfg/wifi_enable",
-    "cfg/wifi/ssid1",
-    "cfg/wifi/ssid2",
-    "cfg/wifi/current_ssid",
-    "cfg/wifi/current_ip",
+const labelZ = makeLabel("Z", 0x0066ff);
+labelZ.position.set(0, 0, zOffset + 1.0);
+group.add(labelZ);
 
-    "cfg/axis/status",
-    "cfg/axis/wizard_active",
-    "cfg/axis/wizard_step",
-    "cfg/axis/pending",
-    "cfg/axis/map_x",
-    "cfg/axis/map_y",
-    "cfg/axis/map_z",
-    "cfg/axis/valid"
-  ];
-
-  topics.forEach(t => client.subscribe(`${baseTopic}/${t}`));
-}
-
-function handleMessage(topic, msg) {
-  if (topic === `${baseTopic}/availability`) {
-    setStatus("Availability: " + msg);
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/wifi_enable`) {
-    document.getElementById("wifiEnableToggle").checked = (msg === "ON");
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/wifi/ssid1`) {
-    if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
-      document.getElementById("wifiSsid1").value = msg;
-    }
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/wifi/ssid2`) {
-    if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
-      document.getElementById("wifiSsid2").value = msg;
-      wifiFieldsLoadedOnce = true;
-    }
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/wifi/current_ssid`) {
-    document.getElementById("currentWifi").innerText = msg || "-";
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/wifi/current_ip`) {
-    document.getElementById("currentIp").innerText = msg || "-";
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/status`) {
-    document.getElementById("axisStatus").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/wizard_active`) {
-    document.getElementById("wizardActive").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/wizard_step`) {
-    document.getElementById("wizardStep").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/pending`) {
-    document.getElementById("pendingAxis").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/map_x`) {
-    document.getElementById("mapX").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/map_y`) {
-    document.getElementById("mapY").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/map_z`) {
-    document.getElementById("mapZ").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/cfg/axis/valid`) {
-    document.getElementById("mapValid").innerText = msg;
-    return;
-  }
-
-  if (topic === `${baseTopic}/state/json`) {
-    let d;
-
-    try {
-      d = JSON.parse(msg);
-    } catch(e) {
-      console.warn("JSON parse fejl", e, msg);
-      return;
-    }
-
-    document.getElementById("rollVal").innerText = Number(d.roll ?? 0).toFixed(2);
-    document.getElementById("pitchVal").innerText = Number(d.pitch ?? 0).toFixed(2);
-    document.getElementById("yawVal").innerText = Number(d.yaw ?? 0).toFixed(2);
-
-    document.getElementById("axVal").innerText = Number(d.ax ?? 0).toFixed(5);
-    document.getElementById("ayVal").innerText = Number(d.ay ?? 0).toFixed(5);
-    document.getElementById("azVal").innerText = Number(d.az ?? 0).toFixed(5);
-
-    document.getElementById("gxVal").innerText = Number(d.gx ?? 0).toFixed(5);
-    document.getElementById("gyVal").innerText = Number(d.gy ?? 0).toFixed(5);
-    document.getElementById("gzVal").innerText = Number(d.gz ?? 0).toFixed(5);
-
-    document.getElementById("tempVal").innerText = Number(d.temp_c ?? 0).toFixed(2) + " °C";
-    document.getElementById("homeVal").innerText = d.home_set ? "Ja" : "Nej";
-
-    document.getElementById("currentWifi").innerText = d.wifi_ssid || "-";
-    document.getElementById("currentIp").innerText = d.ip || "-";
-
-    document.getElementById("axisStatus").innerText = d.axis_status || "-";
-    document.getElementById("wizardActive").innerText = d.wizard_active ? "ON" : "OFF";
-    document.getElementById("wizardStep").innerText = d.wizard_step || "-";
-    document.getElementById("pendingAxis").innerText = d.pending_axis || "-";
-
-    document.getElementById("mapX").innerText = d.map_x || "-";
-    document.getElementById("mapY").innerText = d.map_y || "-";
-    document.getElementById("mapZ").innerText = d.map_z || "-";
-    document.getElementById("mapValid").innerText = d.axis_mapping_valid ? "ON" : "OFF";
-
-    if (d.qw !== undefined) {
-      group.quaternion.set(
-        Number(d.qx),
-        Number(d.qy),
-        Number(d.qz),
-        Number(d.qw)
-      );
-    }
-
-    if (loggingEnabled) {
-      samples.push({
-        ts: d.ts,
-        roll: d.roll,
-        pitch: d.pitch,
-        yaw: d.yaw,
-        ax: d.ax,
-        ay: d.ay,
-        az: d.az,
-        gx: d.gx,
-        gy: d.gy,
-        gz: d.gz,
-        qw: d.qw,
-        qx: d.qx,
-        qy: d.qy,
-        qz: d.qz,
-        temp_c: d.temp_c,
-        home_set: d.home_set,
-        axis_status: d.axis_status,
-        wizard_active: d.wizard_active,
-        wizard_step: d.wizard_step,
-        pending_axis: d.pending_axis,
-        map_x: d.map_x,
-        map_y: d.map_y,
-        map_z: d.map_z,
-        axis_mapping_valid: d.axis_mapping_valid,
-        wifi_ssid: d.wifi_ssid,
-        ip: d.ip
-      });
-
-      document.getElementById("sampleCount").innerText = samples.length;
-    }
-  }
-}
-
-function publishCmd(cmd, payload) {
-  if (!client || !baseTopic) return;
-  client.publish(`${baseTopic}/cmd/${cmd}`, payload);
-}
-
-function publishSet(name, value) {
-  if (!client || !baseTopic) return;
-  client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
-}
-
-function saveWifiConfig() {
-  if (!client || !baseTopic) return;
-
-  client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, document.getElementById("wifiSsid1").value);
-  client.publish(`${baseTopic}/cmd/wifi/pass1/set`, document.getElementById("wifiPass1").value);
-  client.publish(`${baseTopic}/cmd/wifi/ssid2/set`, document.getElementById("wifiSsid2").value);
-  client.publish(`${baseTopic}/cmd/wifi/pass2/set`, document.getElementById("wifiPass2").value);
-
-  wifiFieldsDirty = false;
-  wifiFieldsLoadedOnce = true;
-
-  setStatus("WiFi-indstillinger sendt");
-}
-
-function clearLog() {
-  samples = [];
-  document.getElementById("sampleCount").innerText = "0";
-}
-
-function downloadCSV() {
-  if (!samples.length) {
-    alert("Ingen samples endnu.");
-    return;
-  }
-
-  const headers = [
-    "ts",
-    "roll", "pitch", "yaw",
-    "ax", "ay", "az",
-    "gx", "gy", "gz",
-    "qw", "qx", "qy", "qz",
-    "temp_c",
-    "home_set",
-    "axis_status",
-    "wizard_active",
-    "wizard_step",
-    "pending_axis",
-    "map_x", "map_y", "map_z",
-    "axis_mapping_valid",
-    "wifi_ssid",
-    "ip"
-  ];
-
-  const rows = samples.map(s => headers.map(h => {
-    let v = s[h];
-    if (v === undefined || v === null) return "";
-    return String(v).replaceAll(",", ".");
-  }));
-
-  const csv = [
-    headers.join(","),
-    ...rows.map(r => r.join(","))
-  ].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "gyro_axis_log.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  URL.revokeObjectURL(url);
-}
-</script>
-</body>
-</html>
+// ====== CENTER DOT ======
+const center = new THREE.Mesh(
+  new THREE.SphereGeometry(0.05, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffffff })
+);
+center.position.set(0, 0, zOffset);
+group.add(center);
