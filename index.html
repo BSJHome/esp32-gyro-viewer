@@ -1,37 +1,170 @@
 <!DOCTYPE html>
 <html lang="da">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ESP32 BMI160 Axis Viewer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 BMI160 Viewer</title>
+
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
   <style>
-    body { margin:0; font-family:Arial,sans-serif; background:#111; color:#eee; }
-    .wrap { display:grid; grid-template-columns:470px 1fr; min-height:100vh; }
-    .panel { padding:16px; background:#1a1a1a; overflow:auto; }
-    .viewer { position:relative; }
-    input, button { width:100%; padding:10px; margin-top:6px; box-sizing:border-box; }
-    button { cursor:pointer; }
-    .row { margin-bottom:12px; }
-    .status { padding:8px; background:#222; border-radius:8px; margin-bottom:12px; }
-    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
-    .value { font-weight:bold; }
-    .small { font-size:12px; opacity:.75; }
-    hr { border:0; border-top:1px solid #333; margin:16px 0; }
-    canvas { display:block; width:100%; height:100%; }
-    .switch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; }
-    .switch { position:relative; display:inline-block; width:56px; height:30px; flex:0 0 auto; }
-    .switch input { display:none; }
-    .slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#555; transition:.25s; border-radius:30px; }
-    .slider:before { position:absolute; content:""; height:22px; width:22px; left:4px; bottom:4px; background:white; transition:.25s; border-radius:50%; }
-    input:checked + .slider { background:#2e7d32; }
-    input:checked + .slider:before { transform:translateX(26px); }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #eee;
+    }
+
+    .wrap {
+      display: grid;
+      grid-template-columns: 470px 1fr;
+      min-height: 100vh;
+    }
+
+    .panel {
+      padding: 16px;
+      background: #181818;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+
+    .viewer {
+      position: relative;
+      background: #050505;
+    }
+
+    h2, h3 {
+      margin-top: 14px;
+    }
+
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 6px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .row {
+      margin-bottom: 12px;
+    }
+
+    .status {
+      padding: 10px;
+      background: #222;
+      border-radius: 8px;
+      margin: 12px 0;
+    }
+
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .grid3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .value {
+      font-weight: bold;
+      color: #ffffff;
+    }
+
+    .small {
+      font-size: 12px;
+      opacity: 0.75;
+      line-height: 1.35;
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid #333;
+      margin: 18px 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 56px;
+      height: 30px;
+      flex: 0 0 auto;
+    }
+
+    .switch input {
+      display: none;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #555;
+      transition: .25s;
+      border-radius: 30px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 4px;
+      bottom: 4px;
+      background: white;
+      transition: .25s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background: #2e7d32;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+
+    @media (max-width: 900px) {
+      .wrap {
+        display: block;
+      }
+
+      .viewer {
+        height: 420px;
+      }
+    }
   </style>
 </head>
+
 <body>
 <div class="wrap">
+
   <div class="panel">
     <h2>ESP32 BMI160 Viewer</h2>
 
@@ -53,6 +186,7 @@
     <div class="row">
       <label>Device ID valgfrit</label>
       <input id="deviceId">
+      <div class="small">Lad feltet være tomt for auto-detect.</div>
     </div>
 
     <button onclick="connectMQTT()">Forbind</button>
@@ -73,7 +207,7 @@
     <div class="switch-row">
       <div>
         <div>WiFi aktiv</div>
-        <div class="small">OFF = ESP32 forsøger ikke WiFi</div>
+        <div class="small">OFF = ESP32 forsøger ikke at forbinde</div>
       </div>
       <label class="switch">
         <input type="checkbox" id="wifiEnableToggle">
@@ -85,14 +219,17 @@
       <label>WiFi 1 SSID</label>
       <input id="wifiSsid1">
     </div>
+
     <div class="row">
       <label>WiFi 1 password</label>
       <input id="wifiPass1" type="password">
     </div>
+
     <div class="row">
       <label>WiFi 2 SSID</label>
       <input id="wifiSsid2">
     </div>
+
     <div class="row">
       <label>WiFi 2 password</label>
       <input id="wifiPass2" type="password">
@@ -100,24 +237,36 @@
 
     <div class="grid2">
       <button onclick="saveWifiConfig()">Gem WiFi</button>
-      <button onclick="publishCmd('wifi/reconnect','PRESS')">Genforbind</button>
+      <button onclick="publishCmd('wifi/reconnect','PRESS')">Genforbind WiFi</button>
     </div>
 
     <hr>
 
-    <h3>Akse-kalibrering</h3>
+    <h3>Akse-wizard</h3>
+
     <p class="small">
-      Bruges før sensoren monteres i pakken. Den lærer hvilken sensorakse der svarer til pakkens X/Y/Z.
-      “Sæt nul” nedenfor er separat og kan bruges senere, når sensoren sidder i pakken.
+      Denne bruges før sensoren monteres i pakken. Systemet foreslår en sensorakse,
+      men den låses først når du trykker Godkend.
     </p>
 
-    <div class="grid3">
-      <button onclick="publishCmd('axis_cal/start_x','PRESS')">Optag X</button>
-      <button onclick="publishCmd('axis_cal/start_y','PRESS')">Optag Y</button>
-      <button onclick="publishCmd('axis_cal/start_z','PRESS')">Optag Z</button>
+    <div class="status">
+      Status: <span class="value" id="axisStatus">-</span><br>
+      Wizard aktiv: <span class="value" id="wizardActive">-</span><br>
+      Aktuelt trin: <span class="value" id="wizardStep">-</span><br>
+      Forslag: <span class="value" id="pendingAxis">-</span>
     </div>
 
-    <button onclick="publishCmd('axis_cal/reset','PRESS')">Nulstil akse-mapping</button>
+    <div class="grid2">
+      <button onclick="publishCmd('axis_wizard/start','PRESS')">Start wizard</button>
+      <button onclick="publishCmd('axis_wizard/reset','PRESS')">Nulstil mapping</button>
+    </div>
+
+    <div class="grid2">
+      <button onclick="publishCmd('axis_wizard/capture','PRESS')">Optag bevægelse</button>
+      <button onclick="publishCmd('axis_wizard/approve','PRESS')">✓ Godkend akse</button>
+    </div>
+
+    <button onclick="publishCmd('axis_wizard/next','PRESS')">Næste akse</button>
 
     <div class="row">
       X mapping: <span class="value" id="mapX">-</span><br>
@@ -129,9 +278,9 @@
     <hr>
 
     <h3>Home / nulpunkt</h3>
+
     <p class="small">
-      Dette ændrer kun startpositionen, ikke akse-mappingen.
-      Bruges når pakken ligger klar før test.
+      Dette er separat fra akse-mapping. Bruges når pakken ligger i sin startposition.
     </p>
 
     <div class="grid2">
@@ -142,6 +291,7 @@
     <hr>
 
     <h3>Kommandoer</h3>
+
     <div class="grid2">
       <button onclick="publishCmd('calibrate_gyro','PRESS')">Kalibrer gyro</button>
       <button onclick="publishCmd('reset_filter','PRESS')">Reset filter</button>
@@ -153,21 +303,24 @@
 
     <hr>
 
-    <h3>Live data</h3>
+    <h3>Orientering</h3>
+
     <div class="grid3">
       <div>Roll: <span class="value" id="rollVal">-</span></div>
       <div>Pitch: <span class="value" id="pitchVal">-</span></div>
       <div>Yaw: <span class="value" id="yawVal">-</span></div>
     </div>
 
-    <h4>Acceleration</h4>
+    <h3>Acceleration</h3>
+
     <div class="grid3">
       <div>AX: <span class="value" id="axVal">-</span></div>
       <div>AY: <span class="value" id="ayVal">-</span></div>
       <div>AZ: <span class="value" id="azVal">-</span></div>
     </div>
 
-    <h4>Gyro</h4>
+    <h3>Gyro</h3>
+
     <div class="grid3">
       <div>GX: <span class="value" id="gxVal">-</span></div>
       <div>GY: <span class="value" id="gyVal">-</span></div>
@@ -200,11 +353,13 @@
       <button onclick="clearLog()">Ryd log</button>
       <button onclick="downloadCSV()">Download CSV</button>
     </div>
+
   </div>
 
   <div class="viewer">
     <canvas id="c"></canvas>
   </div>
+
 </div>
 
 <script>
@@ -217,10 +372,10 @@ let wifiFieldsLoadedOnce = false;
 let wifiFieldsDirty = false;
 
 const canvas = document.getElementById("c");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+scene.background = new THREE.Color(0x050505);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
 camera.position.set(0, 0, 4);
@@ -249,13 +404,15 @@ nose.position.z = -1.45;
 group.add(nose);
 
 function resizeRenderer() {
-  const panelWidth = 470;
+  const panelWidth = window.innerWidth > 900 ? 470 : 0;
   const w = Math.max(window.innerWidth - panelWidth, 300);
-  const h = window.innerHeight;
+  const h = window.innerWidth > 900 ? window.innerHeight : 420;
+
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
+
 resizeRenderer();
 window.addEventListener("resize", resizeRenderer);
 
@@ -263,6 +420,7 @@ function animate() {
   requestAnimationFrame(animate);
   renderer.render(scene, camera);
 }
+
 animate();
 
 function setStatus(txt) {
@@ -272,6 +430,7 @@ function setStatus(txt) {
 function setActiveDevice(deviceId) {
   activeDeviceId = deviceId;
   baseTopic = `gyro/${deviceId}`;
+
   document.getElementById("activeDevice").innerText = deviceId;
   document.getElementById("activeTopic").innerText = baseTopic;
 }
@@ -284,7 +443,7 @@ document.getElementById("wifiEnableToggle").addEventListener("change", e => {
   publishSet("wifi_enable", e.target.checked ? "ON" : "OFF");
 });
 
-["wifiSsid1","wifiPass1","wifiSsid2","wifiPass2"].forEach(id => {
+["wifiSsid1", "wifiPass1", "wifiSsid2", "wifiPass2"].forEach(id => {
   document.getElementById(id).addEventListener("input", () => {
     wifiFieldsDirty = true;
   });
@@ -321,9 +480,17 @@ function connectMQTT() {
     }
   });
 
-  client.on("error", err => setStatus("Fejl: " + err.message));
-  client.on("offline", () => setStatus("Offline"));
-  client.on("reconnect", () => setStatus("Genforbinder..."));
+  client.on("error", err => {
+    setStatus("Fejl: " + err.message);
+  });
+
+  client.on("offline", () => {
+    setStatus("Offline");
+  });
+
+  client.on("reconnect", () => {
+    setStatus("Genforbinder...");
+  });
 
   client.on("message", (topic, payload) => {
     const msg = payload.toString();
@@ -347,19 +514,27 @@ function connectMQTT() {
 function subscribeToCurrentDevice() {
   if (!client || !baseTopic) return;
 
-  [
+  const topics = [
     "state/json",
     "availability",
+
     "cfg/wifi_enable",
     "cfg/wifi/ssid1",
     "cfg/wifi/ssid2",
     "cfg/wifi/current_ssid",
     "cfg/wifi/current_ip",
+
+    "cfg/axis/status",
+    "cfg/axis/wizard_active",
+    "cfg/axis/wizard_step",
+    "cfg/axis/pending",
     "cfg/axis/map_x",
     "cfg/axis/map_y",
     "cfg/axis/map_z",
     "cfg/axis/valid"
-  ].forEach(t => client.subscribe(`${baseTopic}/${t}`));
+  ];
+
+  topics.forEach(t => client.subscribe(`${baseTopic}/${t}`));
 }
 
 function handleMessage(topic, msg) {
@@ -374,7 +549,9 @@ function handleMessage(topic, msg) {
   }
 
   if (topic === `${baseTopic}/cfg/wifi/ssid1`) {
-    if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) document.getElementById("wifiSsid1").value = msg;
+    if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
+      document.getElementById("wifiSsid1").value = msg;
+    }
     return;
   }
 
@@ -393,6 +570,26 @@ function handleMessage(topic, msg) {
 
   if (topic === `${baseTopic}/cfg/wifi/current_ip`) {
     document.getElementById("currentIp").innerText = msg || "-";
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/axis/status`) {
+    document.getElementById("axisStatus").innerText = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/axis/wizard_active`) {
+    document.getElementById("wizardActive").innerText = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/axis/wizard_step`) {
+    document.getElementById("wizardStep").innerText = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/axis/pending`) {
+    document.getElementById("pendingAxis").innerText = msg;
     return;
   }
 
@@ -417,7 +614,14 @@ function handleMessage(topic, msg) {
   }
 
   if (topic === `${baseTopic}/state/json`) {
-    const d = JSON.parse(msg);
+    let d;
+
+    try {
+      d = JSON.parse(msg);
+    } catch(e) {
+      console.warn("JSON parse fejl", e, msg);
+      return;
+    }
 
     document.getElementById("rollVal").innerText = Number(d.roll ?? 0).toFixed(2);
     document.getElementById("pitchVal").innerText = Number(d.pitch ?? 0).toFixed(2);
@@ -437,13 +641,23 @@ function handleMessage(topic, msg) {
     document.getElementById("currentWifi").innerText = d.wifi_ssid || "-";
     document.getElementById("currentIp").innerText = d.ip || "-";
 
+    document.getElementById("axisStatus").innerText = d.axis_status || "-";
+    document.getElementById("wizardActive").innerText = d.wizard_active ? "ON" : "OFF";
+    document.getElementById("wizardStep").innerText = d.wizard_step || "-";
+    document.getElementById("pendingAxis").innerText = d.pending_axis || "-";
+
     document.getElementById("mapX").innerText = d.map_x || "-";
     document.getElementById("mapY").innerText = d.map_y || "-";
     document.getElementById("mapZ").innerText = d.map_z || "-";
     document.getElementById("mapValid").innerText = d.axis_mapping_valid ? "ON" : "OFF";
 
     if (d.qw !== undefined) {
-      group.quaternion.set(Number(d.qx), Number(d.qy), Number(d.qz), Number(d.qw));
+      group.quaternion.set(
+        Number(d.qx),
+        Number(d.qy),
+        Number(d.qz),
+        Number(d.qw)
+      );
     }
 
     if (loggingEnabled) {
@@ -463,6 +677,11 @@ function handleMessage(topic, msg) {
         qy: d.qy,
         qz: d.qz,
         temp_c: d.temp_c,
+        home_set: d.home_set,
+        axis_status: d.axis_status,
+        wizard_active: d.wizard_active,
+        wizard_step: d.wizard_step,
+        pending_axis: d.pending_axis,
         map_x: d.map_x,
         map_y: d.map_y,
         map_z: d.map_z,
@@ -470,6 +689,7 @@ function handleMessage(topic, msg) {
         wifi_ssid: d.wifi_ssid,
         ip: d.ip
       });
+
       document.getElementById("sampleCount").innerText = samples.length;
     }
   }
@@ -495,7 +715,8 @@ function saveWifiConfig() {
 
   wifiFieldsDirty = false;
   wifiFieldsLoadedOnce = true;
-  setStatus("WiFi indstillinger sendt.");
+
+  setStatus("WiFi-indstillinger sendt");
 }
 
 function clearLog() {
@@ -510,23 +731,35 @@ function downloadCSV() {
   }
 
   const headers = [
-    "ts","roll","pitch","yaw",
-    "ax","ay","az",
-    "gx","gy","gz",
-    "qw","qx","qy","qz",
+    "ts",
+    "roll", "pitch", "yaw",
+    "ax", "ay", "az",
+    "gx", "gy", "gz",
+    "qw", "qx", "qy", "qz",
     "temp_c",
-    "map_x","map_y","map_z","axis_mapping_valid",
-    "wifi_ssid","ip"
+    "home_set",
+    "axis_status",
+    "wizard_active",
+    "wizard_step",
+    "pending_axis",
+    "map_x", "map_y", "map_z",
+    "axis_mapping_valid",
+    "wifi_ssid",
+    "ip"
   ];
 
-  const rows = samples.map(s => headers.map(h => s[h] ?? ""));
+  const rows = samples.map(s => headers.map(h => {
+    let v = s[h];
+    if (v === undefined || v === null) return "";
+    return String(v).replaceAll(",", ".");
+  }));
 
   const csv = [
     headers.join(","),
     ...rows.map(r => r.join(","))
   ].join("\n");
 
-  const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
