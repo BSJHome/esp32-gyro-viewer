@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="da">
 <head>
   <meta charset="UTF-8">
@@ -34,9 +34,7 @@
       background: #050505;
     }
 
-    h2, h3 {
-      margin-top: 14px;
-    }
+    h2, h3 { margin-top: 14px; }
 
     input, button {
       width: 100%;
@@ -46,13 +44,9 @@
       font-size: 14px;
     }
 
-    button {
-      cursor: pointer;
-    }
+    button { cursor: pointer; }
 
-    .row {
-      margin-bottom: 12px;
-    }
+    .row { margin-bottom: 12px; }
 
     .status {
       padding: 10px;
@@ -114,17 +108,12 @@
       flex: 0 0 auto;
     }
 
-    .switch input {
-      display: none;
-    }
+    .switch input { display: none; }
 
     .slider {
       position: absolute;
       cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       background: #555;
       transition: .25s;
       border-radius: 30px;
@@ -142,22 +131,12 @@
       border-radius: 50%;
     }
 
-    input:checked + .slider {
-      background: #2e7d32;
-    }
-
-    input:checked + .slider:before {
-      transform: translateX(26px);
-    }
+    input:checked + .slider { background: #2e7d32; }
+    input:checked + .slider:before { transform: translateX(26px); }
 
     @media (max-width: 900px) {
-      .wrap {
-        display: block;
-      }
-
-      .viewer {
-        height: 420px;
-      }
+      .wrap { display: block; }
+      .viewer { height: 420px; }
     }
   </style>
 </head>
@@ -353,7 +332,6 @@
       <button onclick="clearLog()">Ryd log</button>
       <button onclick="downloadCSV()">Download CSV</button>
     </div>
-
   </div>
 
   <div class="viewer">
@@ -378,7 +356,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050505);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-camera.position.set(0, 0.8, 4.2);
+camera.position.set(0, 1.4, 4.6);
 
 scene.add(new THREE.AmbientLight(0x888888));
 
@@ -388,6 +366,10 @@ scene.add(light);
 
 const group = new THREE.Group();
 scene.add(group);
+
+// Fast model-offset: kassen ligger ned ved opstart/home
+const modelOffset = new THREE.Quaternion();
+modelOffset.setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
 
 // ====== VELUX 3D-KASSE ======
 const loader = new THREE.TextureLoader();
@@ -757,12 +739,14 @@ function handleMessage(topic, msg) {
     document.getElementById("mapValid").innerText = d.axis_mapping_valid ? "ON" : "OFF";
 
     if (d.qw !== undefined) {
-      group.quaternion.set(
+      const imuQuat = new THREE.Quaternion(
         Number(d.qx),
         Number(d.qy),
         Number(d.qz),
         Number(d.qw)
       );
+
+      group.quaternion.copy(imuQuat).multiply(modelOffset);
     }
 
     if (loggingEnabled) {
@@ -807,75 +791,4 @@ function publishCmd(cmd, payload) {
 
 function publishSet(name, value) {
   if (!client || !baseTopic) return;
-  client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
-}
-
-function saveWifiConfig() {
-  if (!client || !baseTopic) return;
-
-  client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, document.getElementById("wifiSsid1").value);
-  client.publish(`${baseTopic}/cmd/wifi/pass1/set`, document.getElementById("wifiPass1").value);
-  client.publish(`${baseTopic}/cmd/wifi/ssid2/set`, document.getElementById("wifiSsid2").value);
-  client.publish(`${baseTopic}/cmd/wifi/pass2/set`, document.getElementById("wifiPass2").value);
-
-  wifiFieldsDirty = false;
-  wifiFieldsLoadedOnce = true;
-
-  setStatus("WiFi-indstillinger sendt");
-}
-
-function clearLog() {
-  samples = [];
-  document.getElementById("sampleCount").innerText = "0";
-}
-
-function downloadCSV() {
-  if (!samples.length) {
-    alert("Ingen samples endnu.");
-    return;
-  }
-
-  const headers = [
-    "ts",
-    "roll", "pitch", "yaw",
-    "ax", "ay", "az",
-    "gx", "gy", "gz",
-    "qw", "qx", "qy", "qz",
-    "temp_c",
-    "home_set",
-    "axis_status",
-    "wizard_active",
-    "wizard_step",
-    "pending_axis",
-    "map_x", "map_y", "map_z",
-    "axis_mapping_valid",
-    "wifi_ssid",
-    "ip"
-  ];
-
-  const rows = samples.map(s => headers.map(h => {
-    let v = s[h];
-    if (v === undefined || v === null) return "";
-    return String(v).replaceAll(",", ".");
-  }));
-
-  const csv = [
-    headers.join(","),
-    ...rows.map(r => r.join(","))
-  ].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "gyro_axis_log.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  URL.revokeObjectURL(url);
-}
-</script>
-</body>
-</html>
+  client.publish(`${baseTopic}/cmd/${name}/set`
