@@ -223,7 +223,8 @@
       Aktiv device: <span class="value" id="activeDevice">-</span><br>
       Base topic: <span class="value" id="activeTopic">-</span><br>
       WiFi: <span class="value" id="currentWifi">-</span><br>
-      IP: <span class="value" id="currentIp">-</span>
+      IP: <span class="value" id="currentIp">-</span><br>
+      WiFi låst til kode: <span class="value" id="forceCodeWifi">-</span>
     </div>
 
     <hr>
@@ -233,7 +234,9 @@
     <div class="status warn small">
       Hvis ESP32 stadig står på et gammelt netværk, så tryk først <b>Ryd alle WiFi refs</b>,
       forbind igen via Serial/ny upload hvis nødvendigt, og gem derefter det rigtige WiFi.
-      I denne kode er gammelt ESP32 SDK-autoreconnect slået fra, og WiFi OFF gemmes ikke permanent.
+      I v6 er WiFi låst til Arduino-koden ved boot. HTML kan ikke ændre SSID/password permanent.
+      Ret <b>DEFAULT_WIFI_1_SSID</b> og <b>DEFAULT_WIFI_1_PASS</b> øverst i Arduino-koden, upload igen,
+      og brug derefter HTML kun til visning/filter/hastigheder.
     </div>
 
     <div class="switch-row">
@@ -811,6 +814,7 @@ function setActiveDevice(deviceId) {
 
   document.getElementById("activeDevice").innerText = deviceId;
   document.getElementById("activeTopic").innerText = baseTopic;
+  setStatus("ESP32 fundet via MQTT");
 }
 
 document.getElementById("logToggle").addEventListener("change", e => {
@@ -859,7 +863,7 @@ function connectMQTT() {
   });
 
   client.on("connect", () => {
-    setStatus("Forbundet");
+    setStatus("Forbundet til MQTT broker - venter på ESP32 data...");
 
     if (manualDeviceId) {
       setActiveDevice(manualDeviceId);
@@ -912,6 +916,7 @@ function subscribeToCurrentDevice() {
     "availability",
 
     "cfg/wifi_enable",
+    "cfg/wifi/force_code_wifi",
     "cfg/publish_enable",
     "cfg/log_enable",
     "cfg/bias_learning_enable",
@@ -955,6 +960,11 @@ function handleMessage(topic, msg) {
 
   if (topic === `${baseTopic}/cfg/wifi_enable`) {
     document.getElementById("wifiEnableToggle").checked = (msg === "ON");
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/wifi/force_code_wifi`) {
+    document.getElementById("forceCodeWifi").innerText = msg;
     return;
   }
 
@@ -1110,6 +1120,9 @@ function handleMessage(topic, msg) {
 
     document.getElementById("currentWifi").innerText = d.wifi_ssid || "-";
     document.getElementById("currentIp").innerText = d.ip || "-";
+    if (d.force_code_wifi !== undefined) {
+      document.getElementById("forceCodeWifi").innerText = d.force_code_wifi ? "ON" : "OFF";
+    }
 
     document.getElementById("axisStatus").innerText = d.axis_status || "-";
     document.getElementById("wizardActive").innerText = d.wizard_active ? "ON" : "OFF";
@@ -1209,6 +1222,7 @@ function publishSet(name, value) {
 }
 
 function saveWifiConfig(reconnectAfterSave = true) {
+  alert("I v6 er WiFi låst til Arduino-koden. Ret DEFAULT_WIFI_1_SSID/PASS øverst i Arduino-koden og upload igen.");
   if (!client || !baseTopic) return;
 
   client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, document.getElementById("wifiSsid1").value);
