@@ -35,7 +35,7 @@
       overflow: hidden;
     }
 
-    input, button {
+    input, button, select {
       width: 100%;
       padding: 10px;
       margin-top: 6px;
@@ -56,6 +56,11 @@
       background: #222;
       border-radius: 8px;
       margin: 12px 0;
+    }
+
+    .warn {
+      background: #3a2415;
+      border: 1px solid #7d4b20;
     }
 
     .grid2 {
@@ -145,6 +150,27 @@
       transform: translateX(26px);
     }
 
+    .danger {
+      background: #451b1b;
+      color: #fff;
+      border: 1px solid #8a3333;
+    }
+
+    .ok {
+      background: #1d3b1f;
+      color: #fff;
+      border: 1px solid #2e7d32;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #333;
+      margin-left: 4px;
+      font-size: 12px;
+    }
+
     @media (max-width: 900px) {
       .wrap {
         display: block;
@@ -204,6 +230,12 @@
 
     <h3>WiFi</h3>
 
+    <div class="status warn small">
+      Hvis ESP32 stadig står på et gammelt netværk, så tryk først <b>Ryd alle WiFi refs</b>,
+      forbind igen via Serial/ny upload hvis nødvendigt, og gem derefter det rigtige WiFi.
+      I denne kode er gammelt ESP32 SDK-autoreconnect slået fra.
+    </div>
+
     <div class="switch-row">
       <div>
         <div>WiFi aktiv</div>
@@ -236,9 +268,130 @@
     </div>
 
     <div class="grid2">
-      <button onclick="saveWifiConfig()">Gem WiFi</button>
+      <button class="ok" onclick="saveWifiConfig(true)">Gem WiFi + genforbind</button>
       <button onclick="publishCmd('wifi/reconnect','PRESS')">Genforbind WiFi</button>
     </div>
+
+    <div class="grid2">
+      <button onclick="publishCmd('wifi/reset_defaults','PRESS')">Reset til kode-default</button>
+      <button class="danger" onclick="forgetAllWifi()">Ryd alle WiFi refs</button>
+    </div>
+
+    <hr>
+
+    <h3>Sampling / hastigheder</h3>
+
+    <div class="row">
+      <label>IMU sampling-rate på ESP32 (ms)</label>
+      <input id="sampleMs" type="number" min="1" max="1000" step="1">
+      <div class="small">5 ms ≈ 200 Hz. Lavere tal = hurtigere sampling.</div>
+    </div>
+
+    <div class="row">
+      <label>MQTT publish-rate fra ESP32 (ms)</label>
+      <input id="publishMs" type="number" min="20" max="10000" step="1">
+      <div class="small">Dette er hvor ofte ESP32 sender data til browseren.</div>
+    </div>
+
+    <div class="row">
+      <label>Serial log-rate på ESP32 (ms)</label>
+      <input id="logMs" type="number" min="50" max="60000" step="1">
+    </div>
+
+    <div class="row">
+      <label>3D visnings-rate i browseren (ms)</label>
+      <input id="view3dMs" type="number" min="0" max="5000" step="1" value="50">
+      <div class="small">0 = opdatér 3D ved hver MQTT-pakke. 50 ms ≈ 20 FPS.</div>
+    </div>
+
+    <div class="row">
+      <label>Browser CSV log-rate (ms)</label>
+      <input id="browserLogMs" type="number" min="0" max="60000" step="1" value="100">
+      <div class="small">0 = log hver MQTT-pakke.</div>
+    </div>
+
+    <button onclick="saveRates()">Gem hastigheder</button>
+
+    <hr>
+
+    <h3>Accelerometer range</h3>
+
+    <div class="switch-row">
+      <div>
+        <div>Auto range</div>
+        <div class="small">ON = ESP32 skifter selv mellem ±2/4/8/16G</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="accAutoToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="row">
+      <label>Manuel range</label>
+      <select id="accRangeSelect">
+        <option value="2">±2G</option>
+        <option value="4">±4G</option>
+        <option value="8">±8G</option>
+        <option value="16">±16G</option>
+      </select>
+      <div class="small">Når du vælger manuel range, slås auto range fra.</div>
+    </div>
+
+    <button onclick="saveAccRange()">Gem manuel range</button>
+
+    <div class="status">
+      Aktiv range: <span class="value" id="activeRange">-</span><br>
+      Auto range: <span class="value" id="activeAutoRange">-</span>
+    </div>
+
+    <hr>
+
+    <h3>Filterjustering</h3>
+
+    <div class="row">
+      <label>Madgwick beta</label>
+      <input id="madgwickBeta" type="number" min="0.001" max="2" step="0.001">
+    </div>
+
+    <div class="row">
+      <label>Accel LPF alpha</label>
+      <input id="accelAlpha" type="number" min="0" max="1" step="0.01">
+    </div>
+
+    <div class="row">
+      <label>Gyro LPF alpha</label>
+      <input id="gyroAlpha" type="number" min="0" max="1" step="0.01">
+    </div>
+
+    <div class="row">
+      <label>Gyro kalibrering sekunder</label>
+      <input id="gyroCalSeconds" type="number" min="1" max="30" step="1">
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <div>Bias learning</div>
+        <div class="small">Finjusterer gyro-bias langsomt, når sensoren står stille</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="biasLearningToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <div>Home/nulpunkt aktivt</div>
+        <div class="small">OFF = quaternion vises uden home-offset</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="homeEnableToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <button onclick="saveFilterSettings()">Gem filterindstillinger</button>
 
     <hr>
 
@@ -272,7 +425,8 @@
       X mapping: <span class="value" id="mapX">-</span><br>
       Y mapping: <span class="value" id="mapY">-</span><br>
       Z mapping: <span class="value" id="mapZ">-</span><br>
-      Mapping valid: <span class="value" id="mapValid">-</span>
+      Mapping valid: <span class="value" id="mapValid">-</span><br>
+      Visuelle akser: <span class="value" id="visualAxesStatus">følger mapping</span>
     </div>
 
     <hr>
@@ -370,6 +524,10 @@ let loggingEnabled = false;
 let wifiFieldsLoadedOnce = false;
 let wifiFieldsDirty = false;
 
+let last3dUpdateMs = 0;
+let pendingQuat = null;
+let lastBrowserLogMs = 0;
+
 const canvas = document.getElementById("c");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 
@@ -390,7 +548,12 @@ scene.add(group);
 
 // ====================== 3D VELUX-KASSE ======================
 const loader = new THREE.TextureLoader();
-const frontTexture = loader.load("velux_box.png");
+const frontTexture = loader.load(
+  "velux_box.png",
+  undefined,
+  undefined,
+  () => console.warn("velux_box.png blev ikke fundet. Kassen vises stadig, men uden front-billede.")
+);
 
 const boxW = 1.6;
 const boxH = 2.4;
@@ -424,13 +587,21 @@ const body = new THREE.Mesh(
 );
 group.add(body);
 
+// Start med kassen liggende, så den ikke står op før data/home kommer.
+// Denne justeres løbende af quaternion-data bagefter.
+group.rotation.x = Math.PI / 2;
+
 // Akser ovenpå fronten
 const axisLength = 1.35;
 const zOffset = boxD / 2 + 0.05;
 
+const axisOrigin = new THREE.Vector3(0, 0, zOffset);
+
+// Disse tre pile er LOGISKE X/Y/Z-akser.
+// De bliver opdateret af updateVisualAxesFromMapping(), så de følger din axis-wizard mapping.
 const xAxis = new THREE.ArrowHelper(
   new THREE.Vector3(1, 0, 0),
-  new THREE.Vector3(0, 0, zOffset),
+  axisOrigin,
   axisLength,
   0xff0000,
   0.22,
@@ -440,7 +611,7 @@ group.add(xAxis);
 
 const yAxis = new THREE.ArrowHelper(
   new THREE.Vector3(0, 1, 0),
-  new THREE.Vector3(0, 0, zOffset),
+  axisOrigin,
   axisLength,
   0x00ff00,
   0.22,
@@ -450,13 +621,19 @@ group.add(yAxis);
 
 const zAxis = new THREE.ArrowHelper(
   new THREE.Vector3(0, 0, 1),
-  new THREE.Vector3(0, 0, zOffset),
+  axisOrigin,
   0.9,
   0x0066ff,
   0.18,
   0.10
 );
 group.add(zAxis);
+
+const logicalAxes = {
+  X: { arrow: xAxis, color: 0xff0000, len: axisLength, map: "+X" },
+  Y: { arrow: yAxis, color: 0x00ff00, len: axisLength, map: "+Y" },
+  Z: { arrow: zAxis, color: 0x0066ff, len: 0.9, map: "+Z" }
+};
 
 function makeLabel(text, color) {
   const labelCanvas = document.createElement("canvas");
@@ -484,16 +661,60 @@ function makeLabel(text, color) {
 }
 
 const labelX = makeLabel("X", 0xff0000);
-labelX.position.set(axisLength + 0.3, 0, zOffset);
 group.add(labelX);
 
 const labelY = makeLabel("Y", 0x00ff00);
-labelY.position.set(0, axisLength + 0.3, zOffset);
 group.add(labelY);
 
 const labelZ = makeLabel("Z", 0x0066ff);
-labelZ.position.set(0, 0, zOffset + 1.05);
 group.add(labelZ);
+
+logicalAxes.X.label = labelX;
+logicalAxes.Y.label = labelY;
+logicalAxes.Z.label = labelZ;
+
+function vectorFromMappingText(mapText) {
+  // Accepterer fx "+X", "-Y", "+Sensor Z", "X = -Sensor Y"
+  const txt = String(mapText || "").toUpperCase();
+  const sign = txt.includes("-") ? -1 : 1;
+
+  let axis = "X";
+  if (txt.includes("Z")) axis = "Z";
+  else if (txt.includes("Y")) axis = "Y";
+  else if (txt.includes("X")) axis = "X";
+
+  if (axis === "X") return new THREE.Vector3(sign, 0, 0);
+  if (axis === "Y") return new THREE.Vector3(0, sign, 0);
+  return new THREE.Vector3(0, 0, sign);
+}
+
+function updateOneVisualAxis(logicalName, mapText) {
+  const item = logicalAxes[logicalName];
+  if (!item) return;
+
+  item.map = mapText || item.map;
+
+  const dir = vectorFromMappingText(item.map).normalize();
+  item.arrow.setDirection(dir);
+  item.arrow.position.copy(axisOrigin);
+
+  const labelDistance = item.len + 0.28;
+  item.label.position.copy(axisOrigin.clone().add(dir.clone().multiplyScalar(labelDistance)));
+
+  const statusEl = document.getElementById("visualAxesStatus");
+  if (statusEl) {
+    statusEl.innerText = `X=${logicalAxes.X.map}, Y=${logicalAxes.Y.map}, Z=${logicalAxes.Z.map}`;
+  }
+}
+
+function updateVisualAxesFromMapping(logicalName, mapText) {
+  updateOneVisualAxis(logicalName, mapText);
+}
+
+// Standard før første MQTT mapping
+updateOneVisualAxis("X", "+X");
+updateOneVisualAxis("Y", "+Y");
+updateOneVisualAxis("Z", "+Z");
 
 const center = new THREE.Mesh(
   new THREE.SphereGeometry(0.055, 16, 16),
@@ -519,6 +740,21 @@ window.addEventListener("resize", resizeRenderer);
 
 function animate() {
   requestAnimationFrame(animate);
+
+  if (pendingQuat) {
+    const now = performance.now();
+    const viewMs = Number(document.getElementById("view3dMs").value || 0);
+
+    if (viewMs <= 0 || now - last3dUpdateMs >= viewMs) {
+      group.quaternion.set(
+        Number(pendingQuat.qx),
+        Number(pendingQuat.qy),
+        Number(pendingQuat.qz),
+        Number(pendingQuat.qw)
+      );
+      last3dUpdateMs = now;
+    }
+  }
 
   labelX.lookAt(camera.position);
   labelY.lookAt(camera.position);
@@ -546,6 +782,18 @@ document.getElementById("logToggle").addEventListener("change", e => {
 
 document.getElementById("wifiEnableToggle").addEventListener("change", e => {
   publishSet("wifi_enable", e.target.checked ? "ON" : "OFF");
+});
+
+document.getElementById("accAutoToggle").addEventListener("change", e => {
+  client?.publish(`${baseTopic}/cmd/acc/auto_range/set`, e.target.checked ? "ON" : "OFF");
+});
+
+document.getElementById("biasLearningToggle").addEventListener("change", e => {
+  publishSet("bias_learning_enable", e.target.checked ? "ON" : "OFF");
+});
+
+document.getElementById("homeEnableToggle").addEventListener("change", e => {
+  publishSet("home_enable", e.target.checked ? "ON" : "OFF");
 });
 
 ["wifiSsid1", "wifiPass1", "wifiSsid2", "wifiPass2"].forEach(id => {
@@ -579,6 +827,7 @@ function connectMQTT() {
     if (manualDeviceId) {
       setActiveDevice(manualDeviceId);
       subscribeToCurrentDevice();
+      publishCmd("cfg/publish", "PRESS");
     } else {
       client.subscribe("gyro/+/state/json");
       client.subscribe("gyro/+/availability");
@@ -607,6 +856,7 @@ function connectMQTT() {
       if (!activeDeviceId) {
         setActiveDevice(detectedDeviceId);
         subscribeToCurrentDevice();
+        setTimeout(() => publishCmd("cfg/publish", "PRESS"), 300);
       }
 
       if (detectedDeviceId !== activeDeviceId) return;
@@ -624,6 +874,23 @@ function subscribeToCurrentDevice() {
     "availability",
 
     "cfg/wifi_enable",
+    "cfg/publish_enable",
+    "cfg/log_enable",
+    "cfg/bias_learning_enable",
+    "cfg/home_enable",
+
+    "cfg/sample_interval_ms",
+    "cfg/publish_interval_ms",
+    "cfg/log_interval_ms",
+    "cfg/gyro_cal_seconds",
+    "cfg/madgwick_beta",
+    "cfg/accel_lpf_alpha",
+    "cfg/gyro_lpf_alpha",
+
+    "cfg/acc/auto_range",
+    "cfg/acc/range_g",
+    "cfg/acc/lsb_per_g",
+
     "cfg/wifi/ssid1",
     "cfg/wifi/ssid2",
     "cfg/wifi/current_ssid",
@@ -650,6 +917,63 @@ function handleMessage(topic, msg) {
 
   if (topic === `${baseTopic}/cfg/wifi_enable`) {
     document.getElementById("wifiEnableToggle").checked = (msg === "ON");
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/bias_learning_enable`) {
+    document.getElementById("biasLearningToggle").checked = (msg === "ON");
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/home_enable`) {
+    document.getElementById("homeEnableToggle").checked = (msg === "ON");
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/sample_interval_ms`) {
+    document.getElementById("sampleMs").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/publish_interval_ms`) {
+    document.getElementById("publishMs").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/log_interval_ms`) {
+    document.getElementById("logMs").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/gyro_cal_seconds`) {
+    document.getElementById("gyroCalSeconds").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/madgwick_beta`) {
+    document.getElementById("madgwickBeta").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/accel_lpf_alpha`) {
+    document.getElementById("accelAlpha").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/gyro_lpf_alpha`) {
+    document.getElementById("gyroAlpha").value = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/acc/auto_range`) {
+    document.getElementById("accAutoToggle").checked = (msg === "ON");
+    document.getElementById("activeAutoRange").innerText = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/acc/range_g`) {
+    document.getElementById("accRangeSelect").value = String(msg);
+    document.getElementById("activeRange").innerText = "±" + msg + "G";
     return;
   }
 
@@ -700,16 +1024,19 @@ function handleMessage(topic, msg) {
 
   if (topic === `${baseTopic}/cfg/axis/map_x`) {
     document.getElementById("mapX").innerText = msg;
+    updateVisualAxesFromMapping("X", msg);
     return;
   }
 
   if (topic === `${baseTopic}/cfg/axis/map_y`) {
     document.getElementById("mapY").innerText = msg;
+    updateVisualAxesFromMapping("Y", msg);
     return;
   }
 
   if (topic === `${baseTopic}/cfg/axis/map_z`) {
     document.getElementById("mapZ").innerText = msg;
+    updateVisualAxesFromMapping("Z", msg);
     return;
   }
 
@@ -754,48 +1081,81 @@ function handleMessage(topic, msg) {
     document.getElementById("mapX").innerText = d.map_x || "-";
     document.getElementById("mapY").innerText = d.map_y || "-";
     document.getElementById("mapZ").innerText = d.map_z || "-";
+    updateVisualAxesFromMapping("X", d.map_x || "+X");
+    updateVisualAxesFromMapping("Y", d.map_y || "+Y");
+    updateVisualAxesFromMapping("Z", d.map_z || "+Z");
     document.getElementById("mapValid").innerText = d.axis_mapping_valid ? "ON" : "OFF";
 
+    if (d.bias_learning_enable !== undefined) document.getElementById("biasLearningToggle").checked = !!d.bias_learning_enable;
+    if (d.home_enable !== undefined) document.getElementById("homeEnableToggle").checked = !!d.home_enable;
+
+    if (d.sample_interval_ms !== undefined) document.getElementById("sampleMs").value = d.sample_interval_ms;
+    if (d.publish_interval_ms !== undefined) document.getElementById("publishMs").value = d.publish_interval_ms;
+    if (d.log_interval_ms !== undefined) document.getElementById("logMs").value = d.log_interval_ms;
+
+    if (d.acc_range_g !== undefined) {
+      document.getElementById("accRangeSelect").value = String(d.acc_range_g);
+      document.getElementById("activeRange").innerText = "±" + d.acc_range_g + "G";
+    }
+    if (d.acc_auto_range !== undefined) {
+      document.getElementById("accAutoToggle").checked = !!d.acc_auto_range;
+      document.getElementById("activeAutoRange").innerText = d.acc_auto_range ? "ON" : "OFF";
+    }
+
     if (d.qw !== undefined) {
-      group.quaternion.set(
-        Number(d.qx),
-        Number(d.qy),
-        Number(d.qz),
-        Number(d.qw)
-      );
+      pendingQuat = {
+        qw: Number(d.qw),
+        qx: Number(d.qx),
+        qy: Number(d.qy),
+        qz: Number(d.qz)
+      };
     }
 
     if (loggingEnabled) {
-      samples.push({
-        ts: d.ts,
-        roll: d.roll,
-        pitch: d.pitch,
-        yaw: d.yaw,
-        ax: d.ax,
-        ay: d.ay,
-        az: d.az,
-        gx: d.gx,
-        gy: d.gy,
-        gz: d.gz,
-        qw: d.qw,
-        qx: d.qx,
-        qy: d.qy,
-        qz: d.qz,
-        temp_c: d.temp_c,
-        home_set: d.home_set,
-        axis_status: d.axis_status,
-        wizard_active: d.wizard_active,
-        wizard_step: d.wizard_step,
-        pending_axis: d.pending_axis,
-        map_x: d.map_x,
-        map_y: d.map_y,
-        map_z: d.map_z,
-        axis_mapping_valid: d.axis_mapping_valid,
-        wifi_ssid: d.wifi_ssid,
-        ip: d.ip
-      });
+      const now = performance.now();
+      const browserLogMs = Number(document.getElementById("browserLogMs").value || 0);
 
-      document.getElementById("sampleCount").innerText = samples.length;
+      if (browserLogMs <= 0 || now - lastBrowserLogMs >= browserLogMs) {
+        lastBrowserLogMs = now;
+
+        samples.push({
+          ts: d.ts,
+          roll: d.roll,
+          pitch: d.pitch,
+          yaw: d.yaw,
+          ax: d.ax,
+          ay: d.ay,
+          az: d.az,
+          gx: d.gx,
+          gy: d.gy,
+          gz: d.gz,
+          qw: d.qw,
+          qx: d.qx,
+          qy: d.qy,
+          qz: d.qz,
+          temp_c: d.temp_c,
+          home_set: d.home_set,
+          bias_learning_enable: d.bias_learning_enable,
+          home_enable: d.home_enable,
+          sample_interval_ms: d.sample_interval_ms,
+          publish_interval_ms: d.publish_interval_ms,
+          log_interval_ms: d.log_interval_ms,
+          acc_auto_range: d.acc_auto_range,
+          acc_range_g: d.acc_range_g,
+          axis_status: d.axis_status,
+          wizard_active: d.wizard_active,
+          wizard_step: d.wizard_step,
+          pending_axis: d.pending_axis,
+          map_x: d.map_x,
+          map_y: d.map_y,
+          map_z: d.map_z,
+          axis_mapping_valid: d.axis_mapping_valid,
+          wifi_ssid: d.wifi_ssid,
+          ip: d.ip
+        });
+
+        document.getElementById("sampleCount").innerText = samples.length;
+      }
     }
   }
 }
@@ -810,7 +1170,7 @@ function publishSet(name, value) {
   client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
 }
 
-function saveWifiConfig() {
+function saveWifiConfig(reconnectAfterSave = true) {
   if (!client || !baseTopic) return;
 
   client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, document.getElementById("wifiSsid1").value);
@@ -821,7 +1181,39 @@ function saveWifiConfig() {
   wifiFieldsDirty = false;
   wifiFieldsLoadedOnce = true;
 
-  setStatus("WiFi-indstillinger sendt");
+  setStatus(reconnectAfterSave ? "WiFi-indstillinger sendt. Genforbinder..." : "WiFi-indstillinger sendt");
+
+  if (reconnectAfterSave) {
+    setTimeout(() => publishCmd("wifi/reconnect", "PRESS"), 500);
+  }
+}
+
+function forgetAllWifi() {
+  if (!client || !baseTopic) return;
+  if (!confirm("Ryd alle gemte WiFi SSID/password på ESP32 og slå WiFi OFF?")) return;
+  publishCmd("wifi/forget_all", "PRESS");
+  setStatus("Rydder WiFi refs...");
+}
+
+function saveRates() {
+  publishSet("sample_interval_ms", document.getElementById("sampleMs").value);
+  publishSet("publish_interval_ms", document.getElementById("publishMs").value);
+  publishSet("log_interval_ms", document.getElementById("logMs").value);
+  setStatus("Hastigheder sendt");
+}
+
+function saveAccRange() {
+  if (!client || !baseTopic) return;
+  client.publish(`${baseTopic}/cmd/acc/range/set`, document.getElementById("accRangeSelect").value);
+  setStatus("Manuel accelerometer-range sendt");
+}
+
+function saveFilterSettings() {
+  publishSet("madgwick_beta", document.getElementById("madgwickBeta").value);
+  publishSet("accel_lpf_alpha", document.getElementById("accelAlpha").value);
+  publishSet("gyro_lpf_alpha", document.getElementById("gyroAlpha").value);
+  publishSet("gyro_cal_seconds", document.getElementById("gyroCalSeconds").value);
+  setStatus("Filterindstillinger sendt");
 }
 
 function clearLog() {
@@ -843,6 +1235,13 @@ function downloadCSV() {
     "qw", "qx", "qy", "qz",
     "temp_c",
     "home_set",
+    "bias_learning_enable",
+    "home_enable",
+    "sample_interval_ms",
+    "publish_interval_ms",
+    "log_interval_ms",
+    "acc_auto_range",
+    "acc_range_g",
     "axis_status",
     "wizard_active",
     "wizard_step",
