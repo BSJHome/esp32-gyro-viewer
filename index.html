@@ -233,13 +233,13 @@
     <div class="status warn small">
       Hvis ESP32 stadig står på et gammelt netværk, så tryk først <b>Ryd alle WiFi refs</b>,
       forbind igen via Serial/ny upload hvis nødvendigt, og gem derefter det rigtige WiFi.
-      I denne kode er gammelt ESP32 SDK-autoreconnect slået fra.
+      I denne kode er gammelt ESP32 SDK-autoreconnect slået fra, og WiFi OFF gemmes ikke permanent.
     </div>
 
     <div class="switch-row">
       <div>
         <div>WiFi aktiv</div>
-        <div class="small">OFF = ESP32 forsøger ikke at forbinde</div>
+        <div class="small">OFF = slukker kun midlertidigt. Efter reboot tænder WiFi igen som rescue.</div>
       </div>
       <label class="switch">
         <input type="checkbox" id="wifiEnableToggle">
@@ -799,6 +799,12 @@ function setStatus(txt) {
   document.getElementById("statusBox").innerText = txt;
 }
 
+function setNoDeviceWarningIfNeeded() {
+  if (!activeDeviceId) {
+    setStatus("Forbundet til MQTT broker, men ingen ESP32 sender data endnu");
+  }
+}
+
 function setActiveDevice(deviceId) {
   activeDeviceId = deviceId;
   baseTopic = `gyro/${deviceId}`;
@@ -862,6 +868,7 @@ function connectMQTT() {
     } else {
       client.subscribe("gyro/+/state/json");
       client.subscribe("gyro/+/availability");
+      setTimeout(setNoDeviceWarningIfNeeded, 2500);
     }
   });
 
