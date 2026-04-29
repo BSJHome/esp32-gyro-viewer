@@ -426,7 +426,8 @@
       Y mapping: <span class="value" id="mapY">-</span><br>
       Z mapping: <span class="value" id="mapZ">-</span><br>
       Mapping valid: <span class="value" id="mapValid">-</span><br>
-      Visuelle akser: <span class="value" id="visualAxesStatus">følger mapping</span>
+      Visuelle akser: <span class="value" id="visualAxesStatus">følger mapping</span><br>
+      Start/Home-positur: <span class="value" id="visualHomePose">liggende</span>
     </div>
 
     <hr>
@@ -545,6 +546,25 @@ scene.add(light);
 
 const group = new THREE.Group();
 scene.add(group);
+
+// Fast visnings-offset:
+// Gør at "neutral" stilling (ved opstart og efter Home) vises som en liggende kasse,
+// ikke en oprejst kasse.
+const DISPLAY_HOME_ROT_X_DEG = -90;
+const DISPLAY_HOME_ROT_Y_DEG = 0;
+const DISPLAY_HOME_ROT_Z_DEG = 90;
+
+const displayHomeEuler = new THREE.Euler(
+  THREE.MathUtils.degToRad(DISPLAY_HOME_ROT_X_DEG),
+  THREE.MathUtils.degToRad(DISPLAY_HOME_ROT_Y_DEG),
+  THREE.MathUtils.degToRad(DISPLAY_HOME_ROT_Z_DEG),
+  "XYZ"
+);
+
+const displayHomeQuat = new THREE.Quaternion().setFromEuler(displayHomeEuler);
+
+// Startvisning: allerede liggende før første MQTT-pakke kommer ind.
+group.quaternion.copy(displayHomeQuat);
 
 // ====================== 3D VELUX-KASSE ======================
 const loader = new THREE.TextureLoader();
@@ -738,6 +758,18 @@ function resizeRenderer() {
 resizeRenderer();
 window.addEventListener("resize", resizeRenderer);
 
+function getDisplayQuaternion(sensorQuatObj) {
+  const sensorQuat = new THREE.Quaternion(
+    Number(sensorQuatObj?.qx ?? 0),
+    Number(sensorQuatObj?.qy ?? 0),
+    Number(sensorQuatObj?.qz ?? 0),
+    Number(sensorQuatObj?.qw ?? 1)
+  );
+
+  // Fast offset først, så neutral/home vises som "liggende".
+  return displayHomeQuat.clone().multiply(sensorQuat);
+}
+
 function animate() {
   requestAnimationFrame(animate);
 
@@ -746,14 +778,13 @@ function animate() {
     const viewMs = Number(document.getElementById("view3dMs").value || 0);
 
     if (viewMs <= 0 || now - last3dUpdateMs >= viewMs) {
-      group.quaternion.set(
-        Number(pendingQuat.qx),
-        Number(pendingQuat.qy),
-        Number(pendingQuat.qz),
-        Number(pendingQuat.qw)
-      );
+      const q = getDisplayQuaternion(pendingQuat);
+      group.quaternion.copy(q);
       last3dUpdateMs = now;
     }
+  } else {
+    // Hvis vi endnu ikke har data, behold den liggende startvisning.
+    group.quaternion.copy(displayHomeQuat);
   }
 
   labelX.lookAt(camera.position);
