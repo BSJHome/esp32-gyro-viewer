@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="da">
 <head>
   <meta charset="UTF-8">
@@ -813,4 +813,69 @@ function publishSet(name, value) {
 function saveWifiConfig() {
   if (!client || !baseTopic) return;
 
-  client.publish(`${baseTopic}/cmd/wifi/ssid1
+  client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, document.getElementById("wifiSsid1").value);
+  client.publish(`${baseTopic}/cmd/wifi/pass1/set`, document.getElementById("wifiPass1").value);
+  client.publish(`${baseTopic}/cmd/wifi/ssid2/set`, document.getElementById("wifiSsid2").value);
+  client.publish(`${baseTopic}/cmd/wifi/pass2/set`, document.getElementById("wifiPass2").value);
+
+  wifiFieldsDirty = false;
+  wifiFieldsLoadedOnce = true;
+
+  setStatus("WiFi-indstillinger sendt");
+}
+
+function clearLog() {
+  samples = [];
+  document.getElementById("sampleCount").innerText = "0";
+}
+
+function downloadCSV() {
+  if (!samples.length) {
+    alert("Ingen samples endnu.");
+    return;
+  }
+
+  const headers = [
+    "ts",
+    "roll", "pitch", "yaw",
+    "ax", "ay", "az",
+    "gx", "gy", "gz",
+    "qw", "qx", "qy", "qz",
+    "temp_c",
+    "home_set",
+    "axis_status",
+    "wizard_active",
+    "wizard_step",
+    "pending_axis",
+    "map_x", "map_y", "map_z",
+    "axis_mapping_valid",
+    "wifi_ssid",
+    "ip"
+  ];
+
+  const rows = samples.map(s => headers.map(h => {
+    let v = s[h];
+    if (v === undefined || v === null) return "";
+    return String(v).replaceAll(",", ".");
+  }));
+
+  const csv = [
+    headers.join(","),
+    ...rows.map(r => r.join(","))
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "gyro_axis_log.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
