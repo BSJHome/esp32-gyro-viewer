@@ -43,6 +43,11 @@
       font-size: 14px;
     }
 
+    input[type="range"] {
+      padding: 0;
+      accent-color: #777;
+    }
+
     button {
       cursor: pointer;
     }
@@ -234,9 +239,8 @@
     <div class="status warn small">
       Hvis ESP32 stadig står på et gammelt netværk, så tryk først <b>Ryd alle WiFi refs</b>,
       forbind igen via Serial/ny upload hvis nødvendigt, og gem derefter det rigtige WiFi.
-      I v6 er WiFi låst til Arduino-koden ved boot. HTML kan ikke ændre SSID/password permanent.
-      Ret <b>DEFAULT_WIFI_1_SSID</b> og <b>DEFAULT_WIFI_1_PASS</b> øverst i Arduino-koden, upload igen,
-      og brug derefter HTML kun til visning/filter/hastigheder.
+      V11 understøtter op til 4 WiFi-profiler. SSID/password ligger fast i Arduino-koden.
+      HTML vælger kun hvilken profil der skal bruges: Auto eller WiFi 1-4.
     </div>
 
     <div class="switch-row">
@@ -251,28 +255,65 @@
     </div>
 
     <div class="row">
+      <label>Vælg WiFi-profil</label>
+      <select id="wifiProfileMode">
+        <option value="0">Alle / Auto - prøv WiFi 1 → 2 → 3 → 4</option>
+        <option value="1">Kun WiFi 1</option>
+        <option value="2">Kun WiFi 2</option>
+        <option value="3">Kun WiFi 3</option>
+        <option value="4">Kun WiFi 4</option>
+      </select>
+      <div class="small">Dette valg gemmes på ESP32. SSID/password rettes i Arduino-koden.</div>
+    </div>
+
+    <div class="grid2">
+      <button class="ok" onclick="saveWifiProfileMode()">Gem profilvalg + genforbind</button>
+      <button onclick="publishCmd('wifi/reconnect','PRESS')">Genforbind WiFi</button>
+    </div>
+
+    <div class="row">
       <label>WiFi 1 SSID</label>
-      <input id="wifiSsid1">
+      <input id="wifiSsid1" readonly>
     </div>
 
     <div class="row">
       <label>WiFi 1 password</label>
-      <input id="wifiPass1" type="password">
+      <input id="wifiPass1" type="password" readonly placeholder="Styres fra Arduino-koden">
     </div>
 
     <div class="row">
       <label>WiFi 2 SSID</label>
-      <input id="wifiSsid2">
+      <input id="wifiSsid2" readonly>
     </div>
 
     <div class="row">
       <label>WiFi 2 password</label>
-      <input id="wifiPass2" type="password">
+      <input id="wifiPass2" type="password" readonly placeholder="Styres fra Arduino-koden">
+    </div>
+
+    <div class="row">
+      <label>WiFi 3 SSID</label>
+      <input id="wifiSsid3" readonly>
+    </div>
+
+    <div class="row">
+      <label>WiFi 3 password</label>
+      <input id="wifiPass3" type="password" readonly placeholder="Styres fra Arduino-koden">
+    </div>
+
+    <div class="row">
+      <label>WiFi 4 SSID</label>
+      <input id="wifiSsid4" readonly>
+    </div>
+
+    <div class="row">
+      <label>WiFi 4 password</label>
+      <input id="wifiPass4" type="password" readonly placeholder="Styres fra Arduino-koden">
     </div>
 
     <div class="grid2">
-      <button class="ok" onclick="saveWifiConfig(true)">Gem WiFi + genforbind</button>
-      <button onclick="publishCmd('wifi/reconnect','PRESS')">Genforbind WiFi</button>
+      <button class="ok" onclick="saveWifiProfileMode()">Gem profilvalg + genforbind</button>
+      <button onclick="publishCmd('cfg/publish','PRESS')">Hent config</button>
     </div>
 
     <div class="grid2">
@@ -430,7 +471,7 @@
       Z mapping: <span class="value" id="mapZ">-</span><br>
       Mapping valid: <span class="value" id="mapValid">-</span><br>
       Visuelle akser: <span class="value" id="visualAxesStatus">følger mapping</span><br>
-      Start/Home-positur: <span class="value" id="visualHomePose">liggende</span>
+      Start/Home-positur: <span class="value" id="visualHomePose">ligger efter visnings-offset</span>
     </div>
 
     <hr>
@@ -444,6 +485,52 @@
     <div class="grid2">
       <button onclick="publishCmd('set_home','PRESS')">Sæt nul / Home</button>
       <button onclick="publishCmd('clear_home','PRESS')">Ryd Home</button>
+    </div>
+
+    <hr>
+
+    <h3>Visnings-retning / startposition</h3>
+
+    <p class="small">
+      Justerer kun 3D-visningen i browseren. Arduino-data, CSV og BMI160's fysiske akser ændres ikke.
+      Standard i V11 er X=-90, Y=0, Z=90, så kassen ligger ned og er drejet 90° med uret om Z-aksen. Brug dette til at finjustere opstart og Home.
+    </p>
+
+    <div class="row">
+      <label>Start rotation X: <span class="value" id="displayRotXVal">-90</span>°</label>
+      <input id="displayRotX" type="range" min="-180" max="180" step="90" value="-90">
+    </div>
+
+    <div class="row">
+      <label>Start rotation Y: <span class="value" id="displayRotYVal">0</span>°</label>
+      <input id="displayRotY" type="range" min="-180" max="180" step="90" value="0">
+    </div>
+
+    <div class="row">
+      <label>Start rotation Z: <span class="value" id="displayRotZVal">90</span>°</label>
+      <input id="displayRotZ" type="range" min="-180" max="180" step="90" value="90">
+    </div>
+
+    <div class="grid2">
+      <button onclick="saveDisplayPose()">Gem visnings-retning</button>
+      <button onclick="resetDisplayPose()">Reset visnings-retning</button>
+    </div>
+
+    <div class="grid2">
+      <button onclick="setDisplayPosePreset(-90,0,90)">Forslag A: liggende + Z med uret</button>
+      <button onclick="setDisplayPosePreset(-90,0,180)">Forslag B: liggende modsat</button>
+    </div>
+
+    <div class="grid2">
+      <button onclick="setDisplayPosePreset(-90,0,0)">Forslag C: liggende 0°</button>
+      <button onclick="setDisplayPosePreset(90,0,90)">Forslag D: vendt om</button>
+    </div>
+
+    <div class="status small">
+      Aktuel visnings-offset:
+      X=<span id="displayPoseXStatus">-90</span>°,
+      Y=<span id="displayPoseYStatus">0</span>°,
+      Z=<span id="displayPoseZStatus">90</span>°
     </div>
 
     <hr>
@@ -553,22 +640,70 @@ scene.add(group);
 // Fast visnings-offset:
 // Gør at "neutral" stilling (ved opstart og efter Home) vises som en liggende kasse,
 // ikke en oprejst kasse.
-// V8: DISPLAY_HOME_ROT_Z_DEG er sat til 0, så kassen er drejet 90° med uret
-// omkring Z-aksen i forhold til den tidligere v7-visning.
-const DISPLAY_HOME_ROT_X_DEG = -90;
-const DISPLAY_HOME_ROT_Y_DEG = 0;
-const DISPLAY_HOME_ROT_Z_DEG = 0;
+// V9: offset kan justeres direkte i browseren og gemmes i localStorage.
+// Startforslag: X=-90, Y=0, Z=90.
+let displayHomeRotXDeg = Number(localStorage.getItem("bmi160_display_rot_x") ?? -90);
+let displayHomeRotYDeg = Number(localStorage.getItem("bmi160_display_rot_y") ?? 0);
+let displayHomeRotZDeg = Number(localStorage.getItem("bmi160_display_rot_z") ?? 90);
 
-const displayHomeEuler = new THREE.Euler(
-  THREE.MathUtils.degToRad(DISPLAY_HOME_ROT_X_DEG),
-  THREE.MathUtils.degToRad(DISPLAY_HOME_ROT_Y_DEG),
-  THREE.MathUtils.degToRad(DISPLAY_HOME_ROT_Z_DEG),
-  "XYZ"
-);
+let displayHomeEuler = new THREE.Euler(0, 0, 0, "XYZ");
+let displayHomeQuat = new THREE.Quaternion();
 
-const displayHomeQuat = new THREE.Quaternion().setFromEuler(displayHomeEuler);
+function updateDisplayHomeQuat() {
+  displayHomeEuler.set(
+    THREE.MathUtils.degToRad(displayHomeRotXDeg),
+    THREE.MathUtils.degToRad(displayHomeRotYDeg),
+    THREE.MathUtils.degToRad(displayHomeRotZDeg),
+    "XYZ"
+  );
+
+  displayHomeQuat.setFromEuler(displayHomeEuler);
+
+  const values = {
+    displayRotX: displayHomeRotXDeg,
+    displayRotY: displayHomeRotYDeg,
+    displayRotZ: displayHomeRotZDeg,
+    displayRotXVal: displayHomeRotXDeg,
+    displayRotYVal: displayHomeRotYDeg,
+    displayRotZVal: displayHomeRotZDeg,
+    displayPoseXStatus: displayHomeRotXDeg,
+    displayPoseYStatus: displayHomeRotYDeg,
+    displayPoseZStatus: displayHomeRotZDeg
+  };
+
+  Object.entries(values).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if ("value" in el) el.value = val;
+    else el.innerText = val;
+  });
+
+  if (!pendingQuat) {
+    group.quaternion.copy(displayHomeQuat);
+  }
+}
+
+function saveDisplayPose() {
+  localStorage.setItem("bmi160_display_rot_x", String(displayHomeRotXDeg));
+  localStorage.setItem("bmi160_display_rot_y", String(displayHomeRotYDeg));
+  localStorage.setItem("bmi160_display_rot_z", String(displayHomeRotZDeg));
+  setStatus("Visnings-retning gemt i browseren");
+}
+
+function setDisplayPosePreset(x, y, z) {
+  displayHomeRotXDeg = Number(x);
+  displayHomeRotYDeg = Number(y);
+  displayHomeRotZDeg = Number(z);
+  updateDisplayHomeQuat();
+  saveDisplayPose();
+}
+
+function resetDisplayPose() {
+  setDisplayPosePreset(-90, 0, 90);
+}
 
 // Startvisning: allerede liggende før første MQTT-pakke kommer ind.
+updateDisplayHomeQuat();
 group.quaternion.copy(displayHomeQuat);
 
 // ====================== 3D VELUX-KASSE ======================
@@ -827,6 +962,11 @@ document.getElementById("wifiEnableToggle").addEventListener("change", e => {
   publishSet("wifi_enable", e.target.checked ? "ON" : "OFF");
 });
 
+document.getElementById("wifiProfileMode").addEventListener("change", e => {
+  // Vælger kun profil. Passwords ligger i Arduino-koden.
+  publishSet("wifi/profile_mode", e.target.value);
+});
+
 document.getElementById("accAutoToggle").addEventListener("change", e => {
   client?.publish(`${baseTopic}/cmd/acc/auto_range/set`, e.target.checked ? "ON" : "OFF");
 });
@@ -839,7 +979,19 @@ document.getElementById("homeEnableToggle").addEventListener("change", e => {
   publishSet("home_enable", e.target.checked ? "ON" : "OFF");
 });
 
-["wifiSsid1", "wifiPass1", "wifiSsid2", "wifiPass2"].forEach(id => {
+["displayRotX", "displayRotY", "displayRotZ"].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  el.addEventListener("input", () => {
+    displayHomeRotXDeg = Number(document.getElementById("displayRotX").value);
+    displayHomeRotYDeg = Number(document.getElementById("displayRotY").value);
+    displayHomeRotZDeg = Number(document.getElementById("displayRotZ").value);
+    updateDisplayHomeQuat();
+  });
+});
+
+["wifiSsid1", "wifiPass1", "wifiSsid2", "wifiPass2", "wifiSsid3", "wifiPass3", "wifiSsid4", "wifiPass4"].forEach(id => {
   document.getElementById(id).addEventListener("input", () => {
     wifiFieldsDirty = true;
   });
@@ -919,6 +1071,8 @@ function subscribeToCurrentDevice() {
 
     "cfg/wifi_enable",
     "cfg/wifi/force_code_wifi",
+    "cfg/wifi/profile_mode",
+    "cfg/wifi/profile_name",
     "cfg/publish_enable",
     "cfg/log_enable",
     "cfg/bias_learning_enable",
@@ -938,6 +1092,8 @@ function subscribeToCurrentDevice() {
 
     "cfg/wifi/ssid1",
     "cfg/wifi/ssid2",
+    "cfg/wifi/ssid3",
+    "cfg/wifi/ssid4",
     "cfg/wifi/current_ssid",
     "cfg/wifi/current_ip",
 
@@ -967,6 +1123,15 @@ function handleMessage(topic, msg) {
 
   if (topic === `${baseTopic}/cfg/wifi/force_code_wifi`) {
     document.getElementById("forceCodeWifi").innerText = msg;
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/wifi/profile_mode`) {
+    document.getElementById("wifiProfileMode").value = String(msg);
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/wifi/profile_name`) {
     return;
   }
 
@@ -1037,6 +1202,20 @@ function handleMessage(topic, msg) {
   if (topic === `${baseTopic}/cfg/wifi/ssid2`) {
     if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
       document.getElementById("wifiSsid2").value = msg;
+    }
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/wifi/ssid3`) {
+    if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
+      document.getElementById("wifiSsid3").value = msg;
+    }
+    return;
+  }
+
+  if (topic === `${baseTopic}/cfg/wifi/ssid4`) {
+    if (!wifiFieldsLoadedOnce && !wifiFieldsDirty) {
+      document.getElementById("wifiSsid4").value = msg;
       wifiFieldsLoadedOnce = true;
     }
     return;
@@ -1124,6 +1303,9 @@ function handleMessage(topic, msg) {
     document.getElementById("currentIp").innerText = d.ip || "-";
     if (d.force_code_wifi !== undefined) {
       document.getElementById("forceCodeWifi").innerText = d.force_code_wifi ? "ON" : "OFF";
+    }
+    if (d.wifi_profile_mode !== undefined) {
+      document.getElementById("wifiProfileMode").value = String(d.wifi_profile_mode);
     }
 
     document.getElementById("axisStatus").innerText = d.axis_status || "-";
@@ -1223,8 +1405,15 @@ function publishSet(name, value) {
   client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
 }
 
+function saveWifiProfileMode() {
+  if (!client || !baseTopic) return;
+  const mode = document.getElementById("wifiProfileMode").value;
+  client.publish(`${baseTopic}/cmd/wifi/profile_mode/set`, mode);
+  setStatus("WiFi-profilvalg sendt. ESP32 genforbinder...");
+}
+
 function saveWifiConfig(reconnectAfterSave = true) {
-  alert("I v6 er WiFi låst til Arduino-koden. Ret DEFAULT_WIFI_1_SSID/PASS øverst i Arduino-koden og upload igen.");
+  alert("I v11 rettes SSID/password i Arduino-koden. Brug 'Vælg WiFi-profil' for at vælge mellem de 4 profiler.");
   if (!client || !baseTopic) return;
 
   client.publish(`${baseTopic}/cmd/wifi/ssid1/set`, document.getElementById("wifiSsid1").value);
