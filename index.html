@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 BMI160 Viewer</title>
+  <title>ESP32 BMI160 Viewer + Playback</title>
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -174,6 +174,11 @@
       background: #333;
       margin-left: 4px;
       font-size: 12px;
+    }
+
+    .playback-active {
+      outline: 2px solid #2e7d32;
+      outline-offset: 2px;
     }
 
     @media (max-width: 900px) {
@@ -598,6 +603,58 @@
       <button onclick="clearLog()">Ryd log</button>
       <button onclick="downloadCSV()">Download CSV</button>
     </div>
+
+    <hr>
+
+    <h3>Afspil log som 3D-film</h3>
+
+    <p class="small">
+      Indlæs en CSV-log fra browser-loggen. Afspilleren bruger qw/qx/qy/qz
+      til at vise hændelsen som en 3D-film.
+    </p>
+
+    <div class="row">
+      <label>Vælg CSV-log</label>
+      <input id="playbackFile" type="file" accept=".csv,text/csv">
+    </div>
+
+    <div class="status" id="playbackStatus">
+      Ingen log indlæst
+    </div>
+
+    <div class="row">
+      <label>Tidslinje: <span class="value" id="playbackFrameLabel">0 / 0</span></label>
+      <input id="playbackSlider" type="range" min="0" max="0" step="1" value="0">
+    </div>
+
+    <div class="row">
+      <label>Afspilningshastighed</label>
+      <select id="playbackSpeed">
+        <option value="0.25">0.25x</option>
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="2">2x</option>
+        <option value="5">5x</option>
+        <option value="10">10x</option>
+      </select>
+    </div>
+
+    <div class="grid2">
+      <button onclick="playLog()">▶ Afspil</button>
+      <button onclick="pauseLog()">⏸ Pause</button>
+    </div>
+
+    <div class="grid2">
+      <button onclick="stopLog()">⏹ Stop</button>
+      <button onclick="jumpPlaybackToStart()">↺ Til start</button>
+    </div>
+
+    <div class="status small">
+      Playback roll: <span class="value" id="playRoll">-</span><br>
+      Playback pitch: <span class="value" id="playPitch">-</span><br>
+      Playback yaw: <span class="value" id="playYaw">-</span><br>
+      Playback tid: <span class="value" id="playTime">-</span>
+    </div>
   </div>
 
   <div class="viewer">
@@ -612,6 +669,13 @@ let activeDeviceId = "";
 let baseTopic = "";
 let samples = [];
 let loggingEnabled = false;
+
+let playbackSamples = [];
+let playbackIndex = 0;
+let playbackPlaying = false;
+let playbackLastRealMs = 0;
+let playbackAccumulatedLogMs = 0;
+
 let wifiFieldsLoadedOnce = false;
 let wifiFieldsDirty = false;
 
@@ -912,6 +976,8 @@ function getDisplayQuaternion(sensorQuatObj) {
 
 function animate() {
   requestAnimationFrame(animate);
+
+  updatePlayback();
 
   if (pendingQuat) {
     const now = performance.now();
@@ -1458,6 +1524,207 @@ function saveFilterSettings() {
   publishSet("gyro_cal_seconds", document.getElementById("gyroCalSeconds").value);
   setStatus("Filterindstillinger sendt");
 }
+
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === "," && !inQuotes) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += c;
+    }
+  }
+
+  out.push(cur);
+  return out;
+}
+
+function parseCsvText(text) {
+  const lines = text
+    .replace(/\r/g, "")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) return [];
+
+  const headers = parseCsvLine(lines[0]).map(h => h.trim());
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i]);
+    const obj = {};
+
+    headers.forEach((h, idx) => {
+      obj[h] = cols[idx] ?? "";
+    });
+
+    const sample = {
+      ts: Number(obj.ts),
+      roll: Number(obj.roll),
+      pitch: Number(obj.pitch),
+      yaw: Number(obj.yaw),
+      qw: Number(obj.qw),
+      qx: Number(obj.qx),
+      qy: Number(obj.qy),
+      qz: Number(obj.qz)
+    };
+
+    if (
+      Number.isFinite(sample.ts) &&
+      Number.isFinite(sample.qw) &&
+      Number.isFinite(sample.qx) &&
+      Number.isFinite(sample.qy) &&
+      Number.isFinite(sample.qz)
+    ) {
+      rows.push(sample);
+    }
+  }
+
+  rows.sort((a, b) => a.ts - b.ts);
+  return rows;
+}
+
+function loadPlaybackFile(file) {
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    playbackSamples = parseCsvText(String(reader.result || ""));
+    playbackIndex = 0;
+    playbackPlaying = false;
+    playbackAccumulatedLogMs = 0;
+
+    const slider = document.getElementById("playbackSlider");
+    slider.max = Math.max(0, playbackSamples.length - 1);
+    slider.value = 0;
+
+    if (playbackSamples.length > 0) {
+      showPlaybackFrame(0);
+      document.getElementById("playbackStatus").innerText =
+        `Log indlæst: ${playbackSamples.length} frames. Varighed ca. ${formatMs(playbackSamples[playbackSamples.length - 1].ts - playbackSamples[0].ts)}.`;
+    } else {
+      document.getElementById("playbackStatus").innerText =
+        "CSV indlæst, men ingen gyldige quaternion-data fundet. Loggen skal indeholde qw/qx/qy/qz.";
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+function formatMs(ms) {
+  if (!Number.isFinite(ms)) return "-";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(2)} sek`;
+}
+
+function showPlaybackFrame(index) {
+  if (!playbackSamples.length) return;
+
+  playbackIndex = Math.max(0, Math.min(index, playbackSamples.length - 1));
+  const s = playbackSamples[playbackIndex];
+
+  pendingQuat = {
+    qw: s.qw,
+    qx: s.qx,
+    qy: s.qy,
+    qz: s.qz
+  };
+
+  document.getElementById("playbackSlider").value = playbackIndex;
+  document.getElementById("playbackFrameLabel").innerText =
+    `${playbackIndex + 1} / ${playbackSamples.length}`;
+
+  document.getElementById("playRoll").innerText =
+    Number.isFinite(s.roll) ? s.roll.toFixed(2) : "-";
+  document.getElementById("playPitch").innerText =
+    Number.isFinite(s.pitch) ? s.pitch.toFixed(2) : "-";
+  document.getElementById("playYaw").innerText =
+    Number.isFinite(s.yaw) ? s.yaw.toFixed(2) : "-";
+
+  const t0 = playbackSamples[0]?.ts ?? s.ts;
+  document.getElementById("playTime").innerText = formatMs(s.ts - t0);
+}
+
+function playLog() {
+  if (!playbackSamples.length) {
+    alert("Indlæs først en CSV-log.");
+    return;
+  }
+
+  playbackPlaying = true;
+  playbackLastRealMs = performance.now();
+  playbackAccumulatedLogMs = playbackSamples[playbackIndex].ts - playbackSamples[0].ts;
+  document.getElementById("playbackStatus").classList.add("playback-active");
+}
+
+function pauseLog() {
+  playbackPlaying = false;
+  document.getElementById("playbackStatus").classList.remove("playback-active");
+}
+
+function stopLog() {
+  playbackPlaying = false;
+  playbackIndex = 0;
+  playbackAccumulatedLogMs = 0;
+  showPlaybackFrame(0);
+  document.getElementById("playbackStatus").classList.remove("playback-active");
+}
+
+function jumpPlaybackToStart() {
+  playbackIndex = 0;
+  playbackAccumulatedLogMs = 0;
+  showPlaybackFrame(0);
+}
+
+function updatePlayback() {
+  if (!playbackPlaying || playbackSamples.length < 2) return;
+
+  const now = performance.now();
+  const speed = Number(document.getElementById("playbackSpeed").value || 1);
+  const realDelta = now - playbackLastRealMs;
+  playbackLastRealMs = now;
+
+  playbackAccumulatedLogMs += realDelta * speed;
+
+  const startTs = playbackSamples[0].ts;
+  const targetTs = startTs + playbackAccumulatedLogMs;
+
+  while (
+    playbackIndex < playbackSamples.length - 1 &&
+    playbackSamples[playbackIndex + 1].ts <= targetTs
+  ) {
+    playbackIndex++;
+  }
+
+  showPlaybackFrame(playbackIndex);
+
+  if (playbackIndex >= playbackSamples.length - 1) {
+    pauseLog();
+  }
+}
+
+document.getElementById("playbackFile").addEventListener("change", e => {
+  loadPlaybackFile(e.target.files?.[0]);
+});
+
+document.getElementById("playbackSlider").addEventListener("input", e => {
+  pauseLog();
+  showPlaybackFrame(Number(e.target.value));
+});
 
 function clearLog() {
   samples = [];
