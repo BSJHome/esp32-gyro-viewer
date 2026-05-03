@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 BMI160 Viewer + Playback</title>
+  <title>ESP32 BMI160 Viewer + Axis Presets + Playback</title>
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -458,6 +458,28 @@
       Forslag: <span class="value" id="pendingAxis">-</span>
     </div>
 
+    <h4>Akse-preset uden wizard</h4>
+
+    <p class="small">
+      Vælg en fast akse-mapping direkte. Du går ikke glip af noget, hvis du allerede ved
+      hvordan sensoren sidder. Wizard gør kun det samme mere automatisk.
+    </p>
+
+    <div class="row">
+      <label>Vælg akse-preset</label>
+      <select id="axisPresetSelect">
+        <option value="current">Flad/Z-op: X=+X, Y=+Z, Z=-Y</option>
+        <option value="std">Standard: X=+X, Y=+Y, Z=+Z</option>
+        <option value="x_x_y_minus_y_z_z">X=+X, Y=-Y, Z=+Z</option>
+        <option value="x_x_y_minus_z_z_y">X=+X, Y=-Z, Z=+Y</option>
+        <option value="z_cw">Rotér logisk 90° med uret om Z</option>
+        <option value="z_ccw">Rotér logisk 90° mod uret om Z</option>
+        <option value="flip_z">Standard men Z vendt</option>
+      </select>
+    </div>
+
+    <button onclick="applyAxisPresetFromUi()">Brug valgt akse-preset</button>
+
     <div class="grid2">
       <button onclick="publishCmd('axis_wizard/start','PRESS')">Start wizard</button>
       <button onclick="publishCmd('axis_wizard/reset','PRESS')">Nulstil mapping</button>
@@ -610,7 +632,8 @@
 
     <p class="small">
       Indlæs en CSV-log fra browser-loggen. Afspilleren bruger qw/qx/qy/qz
-      til at vise hændelsen som en 3D-film.
+      til at vise hændelsen som en 3D-film. Afspilningshastigheden ændrer ikke
+      selve CSV-dataene; den viser bare filmen langsommere eller hurtigere.
     </p>
 
     <div class="row">
@@ -630,6 +653,9 @@
     <div class="row">
       <label>Afspilningshastighed</label>
       <select id="playbackSpeed">
+        <option value="0.05">0.05x</option>
+        <option value="0.1">0.1x</option>
+        <option value="0.2">0.2x</option>
         <option value="0.25">0.25x</option>
         <option value="0.5">0.5x</option>
         <option value="1" selected>1x</option>
@@ -1469,6 +1495,17 @@ function publishCmd(cmd, payload) {
 function publishSet(name, value) {
   if (!client || !baseTopic) return;
   client.publish(`${baseTopic}/cmd/${name}/set`, String(value));
+}
+
+function applyAxisPresetFromUi() {
+  if (!client || !baseTopic) {
+    alert("Forbind til MQTT/ESP32 først.");
+    return;
+  }
+
+  const preset = document.getElementById("axisPresetSelect").value;
+  client.publish(`${baseTopic}/cmd/axis_preset/set`, preset);
+  setStatus("Akse-preset sendt: " + preset);
 }
 
 function saveWifiProfileMode() {
